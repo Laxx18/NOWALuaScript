@@ -22,11 +22,14 @@ This document outlines the key features, installation, usage, and communication 
 - **Communication with External Applications**: Communicate with game engines or other software via an XML protocol.
 - **API Parsing**: Load custom Lua APIs for auto-completion and type inference within the editor.
 - **Single Instance Control**: Ensures that only one instance of the application runs at a time using a lock file mechanism.
+- **Good Intellisense and autocompletion, even for unknown types due to casting.
+- **Function highlight and description on the fly to see which parameters are required
 
 ## Installation
 To install and run NOWALuaScript:
 1. Clone the repository and build the project using Qt Creator or the command line.
 2. Ensure all necessary Qt dependencies are installed.
+3. Provide a Variable for CMAKE where the external application does sit (optional)
 
 ## Usage
 1. **Launching the Application**: Run the executable from the command line or directly through your development environment.
