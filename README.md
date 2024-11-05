@@ -22,8 +22,8 @@ This document outlines the key features, installation, usage, and communication 
 - **Communication with External Applications**: Communicate with game engines or other software via an XML protocol.
 - **API Parsing**: Load custom Lua APIs for auto-completion and type inference within the editor.
 - **Single Instance Control**: Ensures that only one instance of the application runs at a time using a lock file mechanism.
-- **Good Intellisense and autocompletion, even for unknown types due to casting.
-- **Function highlight and description on the fly to see which parameters are required
+- Good **Intellisense** and **autocompletion**, even for **unknown types** due to casting.
+- **Function highlight** and description on the fly to see which parameters are required.
 
 ## Installation
 To install and run NOWALuaScript:
