@@ -225,7 +225,7 @@ return {
 }
 ```
 
-Also take a look at the NOWA_Api.lua file as orientation. 
+Also take a look at the NOWA_Api.lua file as orientation: https://github.com/Laxx18/NOWA-Engine/blob/main/bin/Release/NOWA_Api.lua
 
 ## Instance Management
 To ensure only one instance of the application runs at a time, NOWALuaScript creates a NOWALuaScript.running file in the executable's bin directory when launched. This file will be deleted upon closing the application.
