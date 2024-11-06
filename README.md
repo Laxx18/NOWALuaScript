@@ -29,7 +29,7 @@ This document outlines the key features, installation, usage, and communication 
 To install and run NOWALuaScript:
 1. Clone the repository and build the project using Qt Creator or the command line.
 2. Ensure all necessary Qt dependencies are installed.
-3. Provide a Variable for CMAKE where the external application does sit (optional)
+3. Provide a Variable for CMAKE where the external application does sit. So the TARGET_PATH variable must be set and a folder specified for that variable, where the application should be deployed.
 
 ## Usage
 1. **Launching the Application**: Run the executable from the command line or directly through your development environment.
