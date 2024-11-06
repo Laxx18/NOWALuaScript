@@ -21,6 +21,10 @@ public:
 
      Q_INVOKABLE void clearError();
 
+     Q_INVOKABLE void highlightRuntimeError(int line, int start, int end);
+
+     Q_INVOKABLE void clearRuntimeError();
+
      Q_INVOKABLE void cursorPositionChanged(int cursorPosition);
 
      Q_INVOKABLE void handleKeywordPressed(QChar keyword);

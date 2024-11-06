@@ -32,10 +32,13 @@ public:
 
     void checkSyntax(const QString& luaCode);
 
+    void checkRuntimeError(const QString& errorMessage, int line, int start, int end);
+
     bool saveLuaScript(const QString& content);
 Q_SIGNALS:
     void signal_luaScriptLoaded(const QString& content);
     void signal_syntaxCheckResult(bool valid, int line, int start, int end, const QString& message);
+    void signal_runtimeError(bool valid, int line, int start, int end, const QString& message);
 private:
     // Internal helper methods and members for parsing
     QStringList searchSuggestions(const QString& text);

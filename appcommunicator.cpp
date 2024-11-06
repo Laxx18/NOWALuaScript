@@ -8,16 +8,16 @@
 #include <Windows.h>
 #endif
 
-// SOURCE_ROOT will be set by CMake at compile time
-#ifndef SOURCE_ROOT
-#define SOURCE_ROOT ""
+// TARGET_PATH will be set by CMake at compile time
+#ifndef TARGET_PATH
+#define TARGET_PATH ""
 #endif
 
 AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScriptController, QObject* parent)
     : QObject(parent),
     ptrLuaScriptController(ptrLuaScriptController)
 {
-    this->watchFilePathName = QString(SOURCE_ROOT) + "/bin/lua_script_data.xml";
+    this->watchFilePathName = QString(TARGET_PATH) + "/NOWALuaScript/bin/lua_script_data.xml";
 
     if (QFileInfo::exists(this->watchFilePathName))
     {
@@ -153,6 +153,10 @@ void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
     // Variables to store extracted data
     QString messageId;
     QString filePathName;
+    QString errorMessage;
+    int line = -1;
+    int start = -1;
+    int end = -1;
 
     // Parse the XML file
     while (!xmlReader.atEnd() && !xmlReader.hasError())
@@ -170,6 +174,16 @@ void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
             {
                 filePathName = xmlReader.readElementText();
             }
+            else if (xmlReader.name().toString() == "error")
+            {
+                // Get attributes of the error element
+                line = xmlReader.attributes().value("line").toInt();
+                start = xmlReader.attributes().value("start").toInt();
+                end = xmlReader.attributes().value("end").toInt();
+
+                // Read the error message
+                errorMessage = xmlReader.readElementText();
+            }
         }
     }
 
@@ -185,9 +199,17 @@ void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
     // Print the parsed data
     qDebug() << "Message ID:" << messageId;
     qDebug() << "File Path:" << filePathName;
+    qDebug() << "Error Message:" << errorMessage;
+    qDebug() << "Line:" << line;
+    qDebug() << "Start:" << start;
+    qDebug() << "End:" << end;
 
-    // Check for your custom message ID
-    if (messageId == "LuaScriptPath")
+    // Check for specific message ID
+    if (messageId == "LuaRuntimeErrors")
+    {
+        this->ptrLuaScriptController->slot_sendLuaScriptError(filePathName, errorMessage, line, start, end);
+    }
+    else if (messageId == "LuaScriptPath")
     {
         // Handle the Lua script path
         qDebug() << "Received Lua script path:" << filePathName;
@@ -195,6 +217,8 @@ void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
         // If NOWALuaScript.exe is opened, a message is send out from NOWA-Design with a lua path. Add it!
         this->ptrLuaScriptController->slot_createLuaScript(filePathName);
     }
+
+#if 0
     // Delete the file after reading
     if (QFile::remove(filePath))
     {
@@ -204,12 +228,13 @@ void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
     {
         qWarning() << "Failed to delete the XML file.";
     }
+#endif
 }
 
 bool AppCommunicator::isInstanceRunning(void)
 {
     // Define the path for the "NOWALuaScript.running" file
-    this->runningFilePath = QString(SOURCE_ROOT) + "/bin/NOWALuaScript.running";
+    this->runningFilePath = QString(TARGET_PATH) + "/NOWALuaScript/bin/NOWALuaScript.running";
 
     QFile runningFile(this->runningFilePath);
     if (runningFile.open(QIODevice::ReadOnly))

@@ -72,9 +72,14 @@ QPair<int, LuaEditorModelItem*> LuaScriptAdapter::createLuaScript(const QString&
     this->luaScripts.append(luaScript);
 
     connect(luaScript, &LuaScript::signal_syntaxCheckResult, this, [this, luaScript](bool valid, int line, int start, int end, const QString& message)
-    {
-                 Q_EMIT signal_syntaxCheckResult(luaScript->getFilePathName(), valid, line, start, end, message);
-    }, Qt::QueuedConnection);
+            {
+                         Q_EMIT signal_syntaxCheckResult(luaScript->getFilePathName(), valid, line, start, end, message);
+            }, Qt::QueuedConnection);
+
+    connect(luaScript, &LuaScript::signal_runtimeError, this, [this, luaScript](bool valid, int line, int start, int end, const QString& message)
+            {
+                Q_EMIT signal_runtimeError(luaScript->getFilePathName(), valid, line, start, end, message);
+            }, Qt::QueuedConnection);
 
 
     // Start the thread
@@ -203,6 +208,18 @@ void LuaScriptAdapter::checkSyntax(const QString& filePathName, const QString& l
         LuaScript* luaScript = this->luaScripts.at(index);
         luaScript->checkSyntax(luaCode);
     }
+}
+
+bool LuaScriptAdapter::sendLuaScriptRuntimeError(const QString& filePathName, const QString& errorMessage, int line, int start, int end)
+{
+    int index = this->findLuaScript(filePathName);
+    if (-1 != index)
+    {
+        LuaScript* luaScript = this->luaScripts.at(index);
+        luaScript->checkRuntimeError(errorMessage, line, start, end);
+        return true;
+    }
+    return false;
 }
 
 QMap<QString, LuaScriptAdapter::ClassData> LuaScriptAdapter::prepareLuaApi(const QString& filePathName, bool parseSilent)

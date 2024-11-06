@@ -29,6 +29,7 @@ LuaScriptController::LuaScriptController(QQmlApplicationEngine* qmlEngine, QShar
     // Connecting backend response to QML
 
     connect(ptrLuaScriptAdapter.data(), &LuaScriptAdapter::signal_syntaxCheckResult, this->luaScriptQmlAdapter, &LuaScriptQmlAdapter::syntaxCheckResult);
+    connect(ptrLuaScriptAdapter.data(), &LuaScriptAdapter::signal_runtimeError, this->luaScriptQmlAdapter, &LuaScriptQmlAdapter::signal_runtimeErrorResult);
 
     connect(ptrLuaScriptAdapter.data(), &LuaScriptAdapter::signal_luaApiPrepareResult, this->luaScriptQmlAdapter, &LuaScriptQmlAdapter::luaApiPreparationResult);
 
@@ -167,6 +168,17 @@ void LuaScriptController::slot_saveLuaScript(const QString& filePathName, const 
 void LuaScriptController::slot_luaScriptSaved()
 {
     this->luaEditorModel->luaScriptSaved();
+}
+
+void LuaScriptController::slot_sendLuaScriptError(const QString& filePathName, const QString& errorMessage, int line, int start, int end)
+{
+    // If there is no such lua script so far, create it first and then send the error
+    bool success = this->ptrLuaScriptAdapter->sendLuaScriptRuntimeError(filePathName, errorMessage, line, start, end);
+    if (false == success)
+    {
+        this->slot_createLuaScript(filePathName);
+        this->ptrLuaScriptAdapter->sendLuaScriptRuntimeError(filePathName, errorMessage, line, start, end);
+    }
 }
 
 void LuaScriptController::prepareLuaApi(const QString& filePathName, bool parseSilent)

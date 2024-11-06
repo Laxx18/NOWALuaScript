@@ -9,11 +9,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Note: In Qt Creator goto project -> filter search for qt_bin_dir and specify the bin diretory there.
 set(QT_BIN_DIR "E:/Qt/6.7.2/mingw_64/bin" CACHE STRING "Path to the Qt bin directory")
 
-# Read the NOWA_ENGINE environment variable
-set(NOWA_ENGINE_PATH $ENV{NOWA})
+# Prompt the user to specify TARGET_PATH
+set(TARGET_PATH "" CACHE PATH "Specify the target folder path for the project")
 
-# Print it out (for debugging purposes)
-message(STATUS "NOWA path is: ${NOWA_ENGINE_PATH}")
+# Check if TARGET_PATH is set
+if(NOT TARGET_PATH)
+    message(FATAL_ERROR "TARGET_PATH is not set. Please set it using -DTARGET_PATH=/path/to/your/folder where the deployed application shall be built")
+endif()
+
+# Use TARGET_PATH in your CMake script
+message(STATUS "TARGET_PATH is set to: ${TARGET_PATH}")
+
+# Add TARGET_PATH as a preprocessor definition
+add_definitions(-DTARGET_PATH="${TARGET_PATH}")
 
 find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent)
 
@@ -132,7 +140,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 
         # Source and destination directories
         set(SOURCE_DIR "${CMAKE_BINARY_DIR}/bin")
-        set(DESTINATION_DIR "${NOWA_ENGINE_PATH}/external/NOWALuaScript/bin")
+        set(DESTINATION_DIR "${TARGET_PATH}/NOWALuaScript/bin")
 
         add_custom_command(
             TARGET NOWALuaScript  # Replace with the name of your build target

@@ -12,6 +12,11 @@ LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
     errorStart(-1),
     errorEnd(-1),
     errorAlreadyCleared(true),
+    runtimeErrorLine(-1),
+    oldRuntimeErrorLine(-2),
+    runtimeErrorStart(-1),
+    runtimeErrorEnd(-1),
+    runtimeErrorAlreadyCleared(true),
     wholeWord(false),
     caseSensitiv(false)
 {
@@ -20,6 +25,10 @@ LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
     this->errorFormat.setFontUnderline(true); // Underline the text
     // // Does not work
     // // this->errorFormat.setUnderlineStyle(QTextCharFormat::WaveUnderline);  // Squiggle underline
+
+    this->runtimeErrorFormat.setBackground(Qt::transparent); // No background
+    this->runtimeErrorFormat.setForeground(Qt::darkMagenta); // Set error color to red
+    this->runtimeErrorFormat.setFontUnderline(true); // Underline the text
 
     HighlightingRule rule;
 
@@ -83,6 +92,43 @@ void LuaHighlighter::clearErrors()
         this->rehighlight(); // Rehighlight the document to clear errors
 
         this->errorAlreadyCleared = true;
+    }
+}
+
+void LuaHighlighter::setRuntimeErrorLine(int line, int start, int end)
+{
+    if (this->oldRuntimeErrorLine != this->runtimeErrorLine)
+    {
+        this->runtimeErrorLine = line;
+        this->runtimeErrorStart = start;
+        this->runtimeErrorEnd = end;
+        this->rehighlight(); // Rehighlight the document to apply changes
+        this->oldRuntimeErrorLine = this->runtimeErrorLine;
+    }
+}
+
+void LuaHighlighter::clearRuntimeErrors()
+{
+    if (false == this->runtimeErrorAlreadyCleared)
+    {
+        // Clear highlight for the specific line
+        QTextCharFormat format; // Reset to default format
+        format.setBackground(Qt::transparent); // Set to transparent to clear highlight
+
+        QTextBlock block = document()->findBlockByLineNumber(this->runtimeErrorLine);
+        if (block.isValid())
+        {
+            // Clear formatting for the entire block (line)
+            setFormat(block.firstLineNumber(), block.length(), format);
+        }
+
+        this->runtimeErrorLine = -1;
+        this->runtimeErrorStart = -1;
+        this->runtimeErrorEnd = -1;
+
+        this->rehighlight(); // Rehighlight the document to clear errors
+
+        this->runtimeErrorAlreadyCleared = true;
     }
 }
 
@@ -536,6 +582,23 @@ void LuaHighlighter::highlightBlock(const QString& text)
             // Format is per block! so the current block starts with 0, the next one too!
             // Set the format for the entire block (line)
             setFormat(0, currentBlock().text().length(), this->errorFormat);  // 0 = start of line, text.length() = end of line
+        }
+    }
+
+    this->runtimeErrorAlreadyCleared = false;
+
+    // Only apply runtime error formatting if we are on the error line
+    if (this->runtimeErrorLine != -1)
+    {
+        // Get the current block number to check if it matches errorLine
+        int currentBlockNumber = currentBlock().blockNumber();
+
+        // If current block number matches the error line, apply the error format
+        if (currentBlockNumber == this->runtimeErrorLine - 1)
+        {
+            // Format is per block! so the current block starts with 0, the next one too!
+            // Set the format for the entire block (line)
+            setFormat(0, currentBlock().text().length(), this->runtimeErrorFormat);  // 0 = start of line, text.length() = end of line
         }
     }
 

@@ -19,6 +19,10 @@ public:
 
     void clearErrors();
 
+    void setRuntimeErrorLine(int line, int start, int end);
+
+    void clearRuntimeErrors();
+
     void commentSelection();
 
     void uncommentSelection();
@@ -71,8 +75,15 @@ private:
     int errorStart;
     int errorEnd;
     QTextCharFormat errorFormat;
-
     bool errorAlreadyCleared;
+
+    int runtimeErrorLine;
+    int oldRuntimeErrorLine;
+    int runtimeErrorStart;
+    int runtimeErrorEnd;
+    QTextCharFormat runtimeErrorFormat;
+    bool runtimeErrorAlreadyCleared;
+
     QTextCursor cursor;
     QString searchText;
     QString replaceText;

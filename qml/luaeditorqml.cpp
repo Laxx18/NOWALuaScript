@@ -542,6 +542,22 @@ void LuaEditorQml::clearError()
     }
 }
 
+void LuaEditorQml::highlightRuntimeError(int line, int start, int end)
+{
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->setRuntimeErrorLine(line, start, end);
+    }
+}
+
+void LuaEditorQml::clearRuntimeError()
+{
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->clearRuntimeErrors();
+    }
+}
+
 void LuaEditorQml::cursorPositionChanged(int cursorPosition)
 {
     this->highlighter->setCursorPosition(cursorPosition);

@@ -37,12 +37,15 @@ public:
 Q_SIGNALS:
     void signal_requestSyntaxCheck(const QString& filePathName, const QString& luaCode);
     void signal_syntaxCheckResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
+    void signal_runtimeErrorResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
     void signal_changeTab(int newTabIndex);
     void signal_requestSetLuaApi(const QString& filePathName, bool parseSilent);
     void signal_luaApiPreparationResult(bool parseSilent, bool success, const QString& message);
     void signal_relayKeyPress(int key);
 public Q_SLOTS:
     void syntaxCheckResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
+
+    void runtimeErrorResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
 
     void luaApiPreparationResult(bool parseSilent, bool success, const QString& message);
 private:

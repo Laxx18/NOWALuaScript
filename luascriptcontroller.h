@@ -32,6 +32,8 @@ public slots:
 
     void slot_luaScriptSaved();
 
+    void slot_sendLuaScriptError(const QString& filePathName, const QString& errorMessage, int line, int start, int end);
+
     void prepareLuaApi(const QString& filePathName, bool parseSilent);
 private:
     LuaEditorQml* createNewLuaEditorQml(void);

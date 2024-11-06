@@ -10,7 +10,7 @@ Rectangle
     id: root
 
     width: parent.width;
-    height: 40;
+    height: 110;
     // color: "darkslategrey";
     color: "white";
 
@@ -18,6 +18,8 @@ Rectangle
     border.width: 2;
 
     // property string filePathName;
+
+    property bool hasRuntimeError: false;
 
     Flickable
     {
@@ -84,17 +86,31 @@ Rectangle
 
                 function onSignal_syntaxCheckResult(filePathName, valid, line, start, end, message)
                 {
-                    // if (filePathName === root.filePathName)
-                    // {
-                        if (!valid)
-                        {
-                            detailsText.text = "Error at line: " + line + " Details: " + message;
-                        }
-                        else
+                    if (!valid)
+                    {
+                        detailsText.text += "Error at line: " + line + " Details: " + message + "\n";
+                    }
+                    else
+                    {
+                        if (!root.hasRuntimeError)
                         {
                             detailsText.text = message;
                         }
-                    // }
+                    }
+                }
+
+                function onSignal_runtimeErrorResult(filePathName, valid, line, start, end, message)
+                {
+                    if (!valid)
+                    {
+                        root.hasRuntimeError = true;
+                        detailsText.text += "Runtime error at line: " + line + " Details: " + message + "\n";
+                    }
+                    else
+                    {
+                        root.hasRuntimeError = false;
+                        detailsText.text = message;
+                    }
                 }
             }
         }

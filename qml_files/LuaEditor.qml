@@ -283,6 +283,21 @@ LuaEditorQml
                             }
                         }
                     }
+
+                    function onSignal_runtimeErrorResult(filePathName, valid, line, start, end, message)
+                    {
+                        if (filePathName === root.model.filePathName)
+                        {
+                            if (!valid)
+                            {
+                                root.highlightRuntimeError(line, start, end); // Highlight the error line
+                            }
+                            else
+                            {
+                                root.clearRuntimeError(); // Clear the error highlight
+                            }
+                        }
+                    }
                 }
             }
         }

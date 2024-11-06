@@ -53,6 +53,11 @@ void LuaScriptQmlAdapter::syntaxCheckResult(const QString& filePathName, bool va
     Q_EMIT signal_syntaxCheckResult(filePathName, valid, line, start, end, message);
 }
 
+void LuaScriptQmlAdapter::runtimeErrorResult(const QString& filePathName, bool valid, int line, int start, int end, const QString &message)
+{
+    Q_EMIT signal_runtimeErrorResult(filePathName, valid, line, start, end, message);
+}
+
 void LuaScriptQmlAdapter::luaApiPreparationResult(bool parseSilent, bool success, const QString& message)
 {
     Q_EMIT signal_luaApiPreparationResult(parseSilent, success, message);
