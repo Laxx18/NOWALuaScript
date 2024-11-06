@@ -55,13 +55,15 @@ To report runtime errors that cannot be detected during script parsing:
 ```xml
 <Message>
     <MessageId>LuaRuntimeErrors</MessageId>
-    <error line="14" start="-1" end="-1">object is nil</error>
+    <FilePath>C:/Users/xxx/NOWA-Engine/media/Projects/Project1/Scene1_barrel_0.lua</FilePath>
+    <error line="14" start="-1" end="-1">object is nil</error> 
 </Message>
 ```
 Clearing Errors: Send an empty error tag to clear all runtime errors:
 ```xml
 <Message>
     <MessageId>LuaRuntimeErrors</MessageId>
+    <FilePath>C:/Users/xxx/NOWA-Engine/media/Projects/Project1/Scene1_barrel_0.lua</FilePath>
     <error line="-1" start="-1" end="-1"></error>
 </Message>
 ```
