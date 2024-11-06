@@ -22,11 +22,16 @@ This document outlines the key features, installation, usage, and communication 
 - **Communication with External Applications**: Communicate with game engines or other software via an XML protocol.
 - **API Parsing**: Load custom Lua APIs for auto-completion and type inference within the editor.
 - **Single Instance Control**: Ensures that only one instance of the application runs at a time using a lock file mechanism.
+- Good **Intellisense** and **autocompletion**, even for **unknown types** due to casting.
+- **Function highlight** and description on the fly to see which parameters are required.
 
 ## Installation
 To install and run NOWALuaScript:
 1. Clone the repository and build the project using Qt Creator or the command line.
 2. Ensure all necessary Qt dependencies are installed.
+3. Provide a Variable for CMAKE where the external application does sit. So the TARGET_PATH variable must be set and a folder specified for that variable, where the application should be deployed.
+   This can be done in the Qt Creator e.g. if you go to "Projects", there is a list of variables. Add the variable "TARGET_PATH" click on "edit", choose folder option and set a folder.
+   **Note**: "/NOWALuaScript/bin/" is appended to the TARGET_PATH variable.
 
 ## Usage
 1. **Launching the Application**: Run the executable from the command line or directly through your development environment.
@@ -52,13 +57,15 @@ To report runtime errors that cannot be detected during script parsing:
 ```xml
 <Message>
     <MessageId>LuaRuntimeErrors</MessageId>
-    <error line="14" start="-1" end="-1">object is nil</error>
+    <FilePath>C:/Users/xxx/NOWA-Engine/media/Projects/Project1/Scene1_barrel_0.lua</FilePath>
+    <error line="14" start="-1" end="-1">object is nil</error> 
 </Message>
 ```
 Clearing Errors: Send an empty error tag to clear all runtime errors:
 ```xml
 <Message>
     <MessageId>LuaRuntimeErrors</MessageId>
+    <FilePath>C:/Users/xxx/NOWA-Engine/media/Projects/Project1/Scene1_barrel_0.lua</FilePath>
     <error line="-1" start="-1" end="-1"></error>
 </Message>
 ```
@@ -222,7 +229,7 @@ return {
 }
 ```
 
-Also take a look at the NOWA_Api.lua file as orientation. 
+Also take a look at the NOWA_Api.lua file as orientation: https://github.com/Laxx18/NOWA-Engine/blob/main/bin/Release/NOWA_Api.lua
 
 ## Instance Management
 To ensure only one instance of the application runs at a time, NOWALuaScript creates a NOWALuaScript.running file in the executable's bin directory when launched. This file will be deleted upon closing the application.
