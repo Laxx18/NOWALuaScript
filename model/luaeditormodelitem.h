@@ -103,6 +103,24 @@ Q_SIGNALS:
 
     void signal_sendTextToEditor(const QString& text);
 private:
+    void detectLocalVariables(const QString& line, int lineNumber);
+
+    void detectGlobalVariables(const QString& line, int lineNumber);
+
+    void handleTableAccess(const QString& statement, int lineNumber);
+
+    void handleCastAssignment(const QString& statement, int lineNumber);
+
+    void handleMethodCallAssignment(const QString& statement, int lineNumber);
+
+    void handleSimpleAssignment(const QString& statement, int lineNumber);
+
+    void handleMethodChainAssignment(const QString& statement, int lineNumber);
+
+    void handleMethodChainAssignmentAssignment(const QString& statement, int lineNumber);
+
+    void handleLoop(const QString& statement, int lineNumber, const QStringList& lines);
+
     // Helper function to resolve types for method chains
     QString resolveMethodChainType(const QString& objectVar);
 private:

@@ -240,333 +240,452 @@ void LuaEditorModelItem::detectVariables(void)
     for (int i = 0; i < lines.size(); ++i)
     {
         QString line = lines[i].trimmed();
-
-        if (true == line.isEmpty())
+        if (line.isEmpty())
         {
             continue;
         }
 
-        // Detect local variables
-        QRegularExpression localVarRegex(R"(local\s+(\w+)\s*=)");
-        QRegularExpressionMatch match = localVarRegex.match(line);
-
-        if (match.hasMatch())
-        {
-            QString varName = match.captured(1);
-            this->variableMap[varName] = LuaVariableInfo{varName, "", i + 1, "local"};
-        }
-
-        // Detect global assignments
-        QRegularExpression globalVarRegex(R"((\w+)\s*=)");
-        match = globalVarRegex.match(line);
-
-        if (match.hasMatch() && !line.startsWith("local"))
-        {
-            QString varName = match.captured(1);
-            this->variableMap[varName] = LuaVariableInfo{varName, "", i + 1, "global"};
-        }
+        detectLocalVariables(line, i + 1);
+        detectGlobalVariables(line, i + 1);
     }
 
-    // Second Pass: Infer variable types based on assignments and method calls
-    for (int i = 0; i < lines.size(); ++i)
+    bool needThirdRound = false;
+
+    do
     {
-        QString line = lines[i].trimmed();
-
-        if (true == line.isEmpty())
+        // Second Pass: Infer variable types based on assignments and method calls
+        for (int i = 0; i < lines.size(); ++i)
         {
-            continue;
-        }
+            QString line = lines[i].trimmed();
 
-        // Split the line into multiple statements using semicolon ";"
-        QStringList statements = line.split(';', Qt::SkipEmptyParts);
-
-        // Process each statement separately
-        for (const QString& statement : statements)
-        {
-            QString trimmedStatement = statement.trimmed();
-
-            // Handle complex type index access (e.g., positionAndNormal[0])
-            QRegularExpression tableAccessRegex(R"(local\s+(\w+)\s*=\s*(\w+)\[(\d+)\])");
-            QRegularExpressionMatch tableAccessMatch = tableAccessRegex.match(trimmedStatement);
-
-            if (tableAccessMatch.hasMatch())
+            if (true == line.isEmpty())
             {
-                QString leftVar = tableAccessMatch.captured(1);   // Variable being assigned
-                QString rightVar = tableAccessMatch.captured(2);  // Source table variable
-                int index = tableAccessMatch.captured(3).toInt(); // Access index
-
-                // Check if rightVar is a known table with complex type
-                if (this->variableMap.contains(rightVar))
-                {
-                    LuaVariableInfo sourceInfo = this->variableMap[rightVar];
-                    if (!sourceInfo.type.isEmpty() && sourceInfo.type.startsWith("Table"))
-                    {
-                        // Extract subtypes for the table in a generic way
-                        QString valueType = sourceInfo.type;
-                        QStringList subTypes;
-                        QRegularExpression subTypeRegex(R"(\[(\w+)\])");
-                        QRegularExpressionMatchIterator it = subTypeRegex.globalMatch(valueType);
-
-                        while (it.hasNext())
-                        {
-                            QRegularExpressionMatch subTypeMatch = it.next();
-                            subTypes.append(subTypeMatch.captured(1)); // Extract each subtype
-                        }
-
-                        // Check if index is within range of subtypes
-                        if (index < subTypes.size())
-                        {
-                            // Assign the extracted type based on the index
-                            QString subtype = subTypes[index];
-                            this->variableMap[leftVar] = LuaVariableInfo{leftVar, subtype, i + 1, "local"};
-                        }
-                    }
-                }
                 continue;
             }
 
+            // Split the line into multiple statements using semicolon ";"
+            QStringList statements = line.split(';', Qt::SkipEmptyParts);
 
-            // Handle the detection of "cast" and assignment of type
-            int castIndex = trimmedStatement.indexOf("cast");
-            if (castIndex != -1)
+            // Process each statement separately
+            for (const QString& statement : statements)
             {
-                // We found the word "cast", so now we need to extract the class name and variable
-                int classNameStart = castIndex + 4;  // "cast" is 4 characters long
+                // Handle method chain assignments
+                handleTableAccess(statement, i + 1);
+                handleCastAssignment(statement, i + 1);
+                handleMethodCallAssignment(statement, i + 1);
+                handleSimpleAssignment(statement, i + 1);
+                handleMethodChainAssignment(statement, i + 1);
+                handleMethodChainAssignmentAssignment(statement, i + 1);
 
-                // Find the start of the class name (skip the parentheses)
-                int openParenIndex = trimmedStatement.indexOf('(', classNameStart);
-                int closeParenIndex = trimmedStatement.indexOf(')', openParenIndex);
+                // Handle for and while loops
+                handleLoop(statement, i + 1, lines);
+            }
+        }
 
-                QString className = trimmedStatement.mid(classNameStart, openParenIndex - classNameStart).trimmed();
+        if (true == needThirdRound)
+        {
+            break;
+        }
 
-                // Now go backward to find the variable before the "="
-                int equalsIndex = trimmedStatement.lastIndexOf('=', castIndex);
-                QString varName = "";
+        // Iterate over all elements in variableMap
+        for (auto it = this->variableMap.begin(); it != this->variableMap.end(); ++it)
+        {
+            // Check if the type is empty or "nil"
+            if (it.value().type.isEmpty() || it.value().type == "nil")
+            {
+                // If this is the case, not all types for variables had been found, because maybe of ordering issue:
+                // E.g. a function is used with variables, but the function comes before the method where dependent variables are assigned
+                // So re-check in a third round once
+                needThirdRound = true;
+                break;
+            }
+        }
+    } while(true == needThirdRound);
 
-                if (equalsIndex != -1)
+    // Additional passes for other types of assignments or specific handling if needed
+}
+
+void LuaEditorModelItem::detectLocalVariables(const QString& line, int lineNumber)
+{
+    // Detect local variables
+    QRegularExpression localVarRegex(R"(local\s+(\w+)\s*=)");
+    QRegularExpressionMatch match = localVarRegex.match(line);
+
+    if (match.hasMatch())
+    {
+        QString varName = match.captured(1);
+        this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber + 1, "local"};
+    }
+}
+
+void LuaEditorModelItem::detectGlobalVariables(const QString& line, int lineNumber)
+{
+    // Detect global assignments
+    QRegularExpression globalVarRegex(R"((\w+)\s*=)");
+    QRegularExpressionMatch match = globalVarRegex.match(line);
+
+    if (match.hasMatch() && !line.startsWith("local"))
+    {
+        QString varName = match.captured(1);
+        this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber + 1, "global"};
+    }
+}
+
+void LuaEditorModelItem::handleTableAccess(const QString& statement, int lineNumber)
+{
+    // Handle complex type index access (e.g., positionAndNormal[0])
+    QRegularExpression tableAccessRegex(R"(local\s+(\w+)\s*=\s*(\w+)\[(\d+)\])");
+    QRegularExpressionMatch tableAccessMatch = tableAccessRegex.match(statement);
+
+    if (tableAccessMatch.hasMatch())
+    {
+        QString leftVar = tableAccessMatch.captured(1);   // Variable being assigned
+        QString rightVar = tableAccessMatch.captured(2);  // Source table variable
+        int index = tableAccessMatch.captured(3).toInt(); // Access index
+
+        // Check if rightVar is a known table with complex type
+        if (this->variableMap.contains(rightVar))
+        {
+            LuaVariableInfo sourceInfo = this->variableMap[rightVar];
+            if (!sourceInfo.type.isEmpty() && sourceInfo.type.startsWith("Table"))
+            {
+                // Extract subtypes for the table in a generic way
+                QString valueType = sourceInfo.type;
+                QStringList subTypes;
+                QRegularExpression subTypeRegex(R"(\[(\w+)\])");
+                QRegularExpressionMatchIterator it = subTypeRegex.globalMatch(valueType);
+
+                while (it.hasNext())
                 {
-                    // Find the variable name before the "=" by iterating backward
-                    int varNameEnd = equalsIndex - 1;
-
-                    while (varNameEnd >= 0 && trimmedStatement[varNameEnd].isSpace())
-                    {
-                        varNameEnd--;
-                    }
-
-                    int varNameStart = varNameEnd;
-                    while (varNameStart >= 0 && (trimmedStatement[varNameStart].isLetterOrNumber() || trimmedStatement[varNameStart] == '_'))
-                    {
-                        varNameStart--;
-                    }
-
-                    varName = trimmedStatement.mid(varNameStart + 1, varNameEnd - varNameStart).trimmed();
+                    QRegularExpressionMatch subTypeMatch = it.next();
+                    subTypes.append(subTypeMatch.captured(1)); // Extract each subtype
                 }
 
-                if (!varName.isEmpty() && !className.isEmpty())
+                // Check if index is within range of subtypes
+                if (index < subTypes.size())
                 {
-                    // Assign the detected class name as the type for the variable
-                    this->variableMap[varName] = LuaVariableInfo{varName, className, i + 1, this->variableMap[varName].scope};
+                    // Assign the extracted type based on the index
+                    QString subtype = subTypes[index];
+                    this->variableMap[leftVar] = LuaVariableInfo{leftVar, subtype, lineNumber + 1, "local"};
                 }
             }
+        }
+    }
+}
 
-            // Handle method call assignments and infer variable types
-            QRegularExpression assignmentRegex(R"((\w+)\s*=\s*(\w+):(\w+)\(\))");
-            QRegularExpressionMatch match = assignmentRegex.match(trimmedStatement);
+void LuaEditorModelItem::handleCastAssignment(const QString& statement, int lineNumber)
+{
+    // Handle the detection of "cast" and assignment of type
+    int castIndex = statement.indexOf("cast");
+    if (castIndex != -1)
+    {
+        // We found the word "cast", so now we need to extract the class name and variable
+        int classNameStart = castIndex + 4;  // "cast" is 4 characters long
 
-            if (match.hasMatch())
+        // Find the start of the class name (skip the parentheses)
+        int openParenIndex = statement.indexOf('(', classNameStart);
+        int closeParenIndex = statement.indexOf(')', openParenIndex);
+
+        QString className = statement.mid(classNameStart, openParenIndex - classNameStart).trimmed();
+
+        // Now go backward to find the variable before the "="
+        int equalsIndex = statement.lastIndexOf('=', castIndex);
+        QString varName = "";
+
+        if (equalsIndex != -1)
+        {
+            // Find the variable name before the "=" by iterating backward
+            int varNameEnd = equalsIndex - 1;
+
+            while (varNameEnd >= 0 && statement[varNameEnd].isSpace())
             {
-                QString leftVar = match.captured(1);  // The variable being assigned
-                QString objectVar = match.captured(2);  // The object being called
-                QString methodName = match.captured(3);  // The method being invoked
-
-                // Check if the objectVar already exists in the variableMap
-                if (this->variableMap.contains(objectVar) && !this->variableMap[objectVar].type.isEmpty())
-                {
-                    // Set the selected class name in ApiModel for method lookup
-                    ApiModel::instance()->setSelectedClassName(this->variableMap[objectVar].type);
-
-                    // Fetch the methods for this class
-                    QVariantList methods = ApiModel::instance()->getMethodsForSelectedClass();
-
-                    // Find the method in the class's methods and get its return type
-                    for (const QVariant& methodVariant : methods)
-                    {
-                        QVariantMap methodMap = methodVariant.toMap();
-                        QString currentMethodName = methodMap["name"].toString();
-
-                        if (currentMethodName == methodName)
-                        {
-                            // Removes the brackets around the return type
-                            QString returnType = methodMap["returns"].toString().remove(QRegularExpression("[()]"));
-
-                            // Assign the return type to the leftVar
-                            if (!returnType.isEmpty())
-                            {
-                                this->variableMap[leftVar] = LuaVariableInfo{leftVar, returnType, i + 1, this->variableMap[leftVar].scope};
-                                continue;
-                            }
-
-                            break;
-                        }
-                    }
-                }
+                varNameEnd--;
             }
 
-            // Handle chain of methods: e.g.
-            // local main = AppStateManager:getController():getFromId(MAIN__ID);
-            // So first determine the AppStateManager -> which is a class and getController is its method. So the "returns" would deliver "Controller".
-            // So this is the new class to look further for its method via ":". So its method would be: "getFromId", which its "returns" would deliver "".
-            // And since this is the last part in the statement, the "main" could be added to the variable map as type "".
-            QRegularExpression chainAssignmentRegex(R"(\s*(\w+)\s*=\s*(.+))");
-            match = chainAssignmentRegex.match(line);
-            if (match.hasMatch())
+            int varNameStart = varNameEnd;
+            while (varNameStart >= 0 && (statement[varNameStart].isLetterOrNumber() || statement[varNameStart] == '_'))
             {
-                QString variableName = match.captured(1);  // e.g., "main"
-                QString expression = match.captured(2);    // e.g., "AppStateManager:getController():getFromId(MAIN__ID)"
-
-                // Split the expression by ":" to get the method chain
-                QStringList methodChain = expression.split(':');
-                if (false == methodChain.isEmpty())
-                {
-                    // Initial class or variable name
-                    QString baseClassOrVar = methodChain[0].trimmed();
-
-                    // Determine if the base is a known variable or a class
-                    QString currentType = variableMap.contains(baseClassOrVar)
-                                              ? variableMap[baseClassOrVar].type
-                                              : baseClassOrVar;  // Start with base class if it's a known type
-
-                    // Iterate through the method chain
-                    for (int i = 1; i < methodChain.size(); ++i)
-                    {
-                        QString methodCall = methodChain[i].split('(').first().trimmed();  // Extract method name
-
-                        if (currentType.isEmpty())
-                        {
-                            qDebug() << "Cannot resolve type for base class/variable" << baseClassOrVar;
-                            break;
-                        }
-
-                        // Use ApiModel to get method details
-                        QVariantMap methodDetails = ApiModel::instance()->getMethodDetails(currentType, methodCall);
-                        if (methodDetails.isEmpty())
-                        {
-                            qDebug() << "Method" << methodCall << "not found in class" << currentType;
-                            break;
-                        }
-
-                        // Get the return type for the next step
-                        currentType = methodDetails["returns"].toString();
-                        if (currentType.isEmpty())
-                        {
-                            qDebug() << "Method" << methodCall << "has no return type information";
-                            break;
-                        }
-
-                        qDebug() << "Method" << methodCall << "returns type" << currentType;
-                    }
-
-                    // Add the variable with the resolved type to variableMap
-                    if (!currentType.isEmpty())
-                    {
-                        // If it has already a type, to not overwrite it
-                        if (this->variableMap.contains(variableName))
-                        {
-                            if (false == this->variableMap[variableName].type.isEmpty())
-                            {
-                                continue;
-                            }
-                        }
-                        LuaVariableInfo varInfo;
-                        varInfo.name = variableName;
-                        varInfo.type = currentType;
-                        varInfo.line = i + 1;
-                        varInfo.scope = this->variableMap[variableName].scope;
-                        this->variableMap[variableName] = varInfo;
-                        qDebug() << "Added variable" << variableName << "with type" << currentType << "to variableMap";
-                        continue;
-                    }
-                }
+                varNameStart--;
             }
 
-            // Handle method chain assignment (e.g., variable = object:method1():method2())
-            QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+))");
-            match = assignmentChainRegex.match(trimmedStatement);
-            if (match.hasMatch())
-            {
-                QString assignedVar = match.captured(1);  // Variable on the left-hand side
-                QString objectVar = match.captured(2);    // Object with method chain on the right-hand side
+            varName = statement.mid(varNameStart + 1, varNameEnd - varNameStart).trimmed();
+        }
 
-                // Resolve the type of the object variable through method chain
-                QString resolvedType = resolveMethodChainType(objectVar);
-                if (!resolvedType.isEmpty())
+        if (!varName.isEmpty() && !className.isEmpty())
+        {
+            // Assign the detected class name as the type for the variable
+            this->variableMap[varName] = LuaVariableInfo{varName, className, lineNumber + 1, this->variableMap[varName].scope};
+        }
+    }
+}
+
+void LuaEditorModelItem::handleMethodCallAssignment(const QString& statement, int lineNumber)
+{
+    // Handle method call assignments and infer variable types
+    QRegularExpression assignmentRegex(R"((\w+)\s*=\s*(\w+):(\w+)\(\))");
+    QRegularExpressionMatch match = assignmentRegex.match(statement);
+
+    if (match.hasMatch())
+    {
+        QString leftVar = match.captured(1);  // The variable being assigned
+        QString objectVar = match.captured(2);  // The object being called
+        QString methodName = match.captured(3);  // The method being invoked
+
+        // Check if the objectVar already exists in the variableMap
+        if (this->variableMap.contains(objectVar) && !this->variableMap[objectVar].type.isEmpty())
+        {
+            QString type = this->variableMap[objectVar].type;
+
+            // Set the selected class name in ApiModel for method lookup
+            ApiModel::instance()->setSelectedClassName(this->variableMap[objectVar].type);
+
+            // Fetch the methods for this class
+            QVariantList methods = ApiModel::instance()->getMethodsForSelectedClass();
+
+            // Find the method in the class's methods and get its return type
+            for (const QVariant& methodVariant : methods)
+            {
+                QVariantMap methodMap = methodVariant.toMap();
+                QString currentMethodName = methodMap["name"].toString();
+
+                if (currentMethodName == methodName)
                 {
-                    this->variableMap[assignedVar] = LuaVariableInfo{assignedVar, resolvedType, i + 1, this->variableMap[assignedVar].scope};
-                    continue;
+                    // Removes the brackets around the return type
+                    QString returnType = methodMap["returns"].toString().remove(QRegularExpression("[()]"));
+
+                    // Assign the return type to the leftVar
+                    if (!returnType.isEmpty())
+                    {
+                        this->variableMap[leftVar] = LuaVariableInfo{leftVar, returnType, lineNumber + 1, this->variableMap[leftVar].scope};
+                        break;
+                    }
+
+                    break;
                 }
             }
+        }
+    }
+}
 
-            // Handle simple assignments (no colons) (e.g., temp2 = temp), so temp2 should exactly be of type temp
-            QRegularExpression simpleAssignmentRegex(R"((\w+)\s*=\s*(\w+)\s*;?)");
-            QRegularExpressionMatch simpleMatch = simpleAssignmentRegex.match(trimmedStatement);
+void LuaEditorModelItem::handleSimpleAssignment(const QString& statement, int lineNumber)
+{
+    // Handle simple assignments (no colons) (e.g., temp2 = temp), so temp2 should exactly be of type temp
+    QRegularExpression simpleAssignmentRegex(R"((\w+)\s*=\s*(\w+)\s*;?)");
+    QRegularExpressionMatch simpleMatch = simpleAssignmentRegex.match(statement);
 
-            if (simpleMatch.hasMatch())
+    if (simpleMatch.hasMatch())
+    {
+        QString leftVar = simpleMatch.captured(1);  // Variable being assigned
+        QString rightVar = simpleMatch.captured(2);  // Variable from which to inherit type
+
+        // Ensure this is a "naked" assignment (no colons involved)
+        if (!statement.contains(":") && this->variableMap.contains(rightVar))
+        {
+            // Inherit the type from the right-hand variable
+            QString rightVarType = this->variableMap[rightVar].type;
+
+            if (!rightVarType.isEmpty())
             {
-                QString leftVar = simpleMatch.captured(1);  // Variable being assigned
-                QString rightVar = simpleMatch.captured(2);  // Variable from which to inherit type
+                this->variableMap[leftVar] = LuaVariableInfo{leftVar, rightVarType, lineNumber + 1, this->variableMap[leftVar].scope};
+            }
+        }
+    }
+}
 
-                // Ensure this is a "naked" assignment (no colons involved)
-                if (!trimmedStatement.contains(":") && this->variableMap.contains(rightVar))
+void LuaEditorModelItem::handleMethodChainAssignmentAssignment(const QString& statement, int lineNumber)
+{
+    // Handle chain of methods: e.g.
+    // local main = AppStateManager:getController():getFromId(MAIN__ID);
+    // So first determine the AppStateManager -> which is a class and getController is its method. So the "returns" would deliver "Controller".
+    // So this is the new class to look further for its method via ":". So its method would be: "getFromId", which its "returns" would deliver "".
+    // And since this is the last part in the statement, the "main" could be added to the variable map as type "".
+    QRegularExpression chainAssignmentRegex(R"(\s*(\w+)\s*=\s*(.+))");
+    QRegularExpressionMatch match = chainAssignmentRegex.match(statement);
+    if (match.hasMatch())
+    {
+        QString variableName = match.captured(1);  // e.g., "main"
+        QString expression = match.captured(2);    // e.g., "AppStateManager:getController():getFromId(MAIN__ID)"
+
+        // Split the expression by ":" to get the method chain
+        QStringList methodChain = expression.split(':');
+        if (false == methodChain.isEmpty())
+        {
+            // Initial class or variable name
+            QString baseClassOrVar = methodChain[0].trimmed();
+
+            // Determine if the base is a known variable or a class
+            QString currentType = variableMap.contains(baseClassOrVar)
+                                      ? variableMap[baseClassOrVar].type
+                                      : baseClassOrVar;  // Start with base class if it's a known type
+
+            // Iterate through the method chain
+            for (int i = 1; i < methodChain.size(); ++i)
+            {
+                QString methodCall = methodChain[i].split('(').first().trimmed();  // Extract method name
+
+                if (currentType.isEmpty())
                 {
-                    // Inherit the type from the right-hand variable
-                    QString rightVarType = this->variableMap[rightVar].type;
+                    qDebug() << "Cannot resolve type for base class/variable" << baseClassOrVar;
+                    break;
+                }
 
-                    if (!rightVarType.isEmpty())
+                // Use ApiModel to get method details
+                QVariantMap methodDetails = ApiModel::instance()->getMethodDetails(currentType, methodCall);
+                if (methodDetails.isEmpty())
+                {
+                    qDebug() << "Method" << methodCall << "not found in class" << currentType;
+                    break;
+                }
+
+                // Get the return type for the next step
+                currentType = methodDetails["returns"].toString();
+                if (currentType.isEmpty())
+                {
+                    qDebug() << "Method" << methodCall << "has no return type information";
+                    break;
+                }
+
+                qDebug() << "Method" << methodCall << "returns type" << currentType;
+            }
+
+            // Add the variable with the resolved type to variableMap
+            if (!currentType.isEmpty())
+            {
+                bool alreadyExisting = false;
+                // If it has already a type, to not overwrite it
+                if (this->variableMap.contains(variableName))
+                {
+                    if (false == this->variableMap[variableName].type.isEmpty())
                     {
-                        this->variableMap[leftVar] = LuaVariableInfo{leftVar, rightVarType, i + 1, this->variableMap[leftVar].scope};
+                        alreadyExisting = true;
+                        // continue;
+                    }
+                }
+                if (false == alreadyExisting)
+                {
+                    LuaVariableInfo varInfo;
+                    varInfo.name = variableName;
+                    varInfo.type = currentType;
+                    varInfo.line = lineNumber + 1;
+                    varInfo.scope = this->variableMap[variableName].scope;
+                    this->variableMap[variableName] = varInfo;
+                    qDebug() << "Added variable" << variableName << "with type" << currentType << "to variableMap";
+                    // continue;
+                }
+            }
+        }
+    }
+}
+
+void LuaEditorModelItem::handleMethodChainAssignment(const QString& statement, int lineNumber)
+{
+    // QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+))");
+    // Handle method chain assignment (e.g., variable = object:method1():method2())
+    // Or even:
+    // Handle method chain assignment (e.g., variable = object:method1():method2().x)
+    QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+(?:\.\w+)?))");
+    QRegularExpressionMatch match = assignmentChainRegex.match(statement);
+    if (match.hasMatch())
+    {
+        QString assignedVar = match.captured(1);  // Variable on the left-hand side
+        QString objectVar = match.captured(2);    // Object with method chain on the right-hand side
+
+        // Resolve the type of the object variable through method chain
+        QString resolvedType = resolveMethodChainType(objectVar);
+        if (!resolvedType.isEmpty())
+        {
+            this->variableMap[assignedVar] = LuaVariableInfo{assignedVar, resolvedType, lineNumber + 1, this->variableMap[assignedVar].scope};
+            // continue;
+            return;
+        }
+    }
+}
+
+void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, const QStringList& lines)
+{
+    // Handle for-loop variables (e.g., for i = 0, #nodes do ...)
+    QRegularExpression loopVarRegex(R"(for\s+(\w+)\s*=\s*0\s*,\s*#(\w+))");
+    QRegularExpressionMatch match = loopVarRegex.match(statement);
+
+    if (match.hasMatch())
+    {
+        QString loopVarName = match.captured(1);  // e.g., "i"
+        QString arrayVarName = match.captured(2);  // e.g., "nodes"
+
+        // Assign "number" type to loop variable
+        this->variableMap[loopVarName] = LuaVariableInfo{loopVarName, "number", lineNumber + 1, "local"};
+
+        // Check if arrayVarName is a known table
+        if (this->variableMap.contains(arrayVarName))
+        {
+            QString arrayType = this->variableMap[arrayVarName].type;
+            if (arrayType.startsWith("Table[number][") && arrayType.endsWith("]"))
+            {
+                // Extract element type from "Table[number][ElementType]"
+                QString elementType = arrayType.mid(14, arrayType.length() - 15);
+
+                // Allow access to elements, e.g., nodeGameObjects[i]
+                QString indexedAccessRegex = QString(R"(%1\[%2\])").arg(arrayVarName, loopVarName);
+                QRegularExpression indexedAccess(indexedAccessRegex);
+
+                for (int j = lineNumber + 1; j < lines.size(); ++j)
+                {
+                    QString line = lines[j].trimmed();
+
+                    // Check for direct usage of nodeGameObjects[i]
+                    if (indexedAccess.match(line).hasMatch())
+                    {
+                        // Add nodeGameObjects[i] to variableMap directly
+                        QString indexedVariableName = QString("%1[%2]").arg(arrayVarName, loopVarName);
+                        this->variableMap[indexedVariableName] = LuaVariableInfo{indexedVariableName, elementType, j + 1, "local"};
+
+                        // Check if it's being assigned to another variable (e.g., local x = nodeGameObjects[i])
+                        // QRegularExpression localVarAssignRegex(R"(local\s+(\w+)\s*=\s*%1\[%2\])".arg(arrayVarName, loopVarName));
+                        QString localVarAssignRegexPattern = QString(R"(local\s+(\w+)\s*=\s*%1\[%2\])").arg(arrayVarName, loopVarName);
+                        QRegularExpression localVarAssignRegex(localVarAssignRegexPattern);
+                        QRegularExpressionMatch indexedMatch = localVarAssignRegex.match(line);
+
+                        if (indexedMatch.hasMatch())
+                        {
+                            QString localVar = indexedMatch.captured(1);
+                            this->variableMap[localVar] = LuaVariableInfo{localVar, elementType, j + 1, "local"};
+                        }
                     }
                 }
             }
         }
+    }
+    else
+    {
+        // Checks if its a while loop
+        // Handle `while` loop variables (e.g., while i <= #nodes do ...)
+        QRegularExpression whileLoopRegex(R"(while\s+(\w+)\s*<=\s*#(\w+))");
+        QRegularExpressionMatch whileMatch = whileLoopRegex.match(statement);
 
-        // Handle for-loop variables (e.g., for i = 0, #nodes do ...)
-        QRegularExpression loopVarRegex(R"(for\s+(\w+)\s*=\s*0\s*,\s*#(\w+))");
-        QRegularExpressionMatch match = loopVarRegex.match(line);
-
-        if (match.hasMatch())
+        if (whileMatch.hasMatch())
         {
-            QString loopVarName = match.captured(1);  // e.g., "i"
-            QString arrayVarName = match.captured(2);  // e.g., "nodes"
+            QString loopVarName = whileMatch.captured(1);  // e.g., "i"
+            QString arrayVarName = whileMatch.captured(2);  // e.g., "nodeGameObjects"
 
-            // Assign "number" type to loop variable
-            this->variableMap[loopVarName] = LuaVariableInfo{loopVarName, "number", i + 1, "local"};
-
-            // Check if arrayVarName is a known table
             if (this->variableMap.contains(arrayVarName))
             {
                 QString arrayType = this->variableMap[arrayVarName].type;
                 if (arrayType.startsWith("Table[number][") && arrayType.endsWith("]"))
                 {
-                    // Extract element type from "Table[number][ElementType]"
                     QString elementType = arrayType.mid(14, arrayType.length() - 15);
 
-                    // Allow access to elements, e.g., nodeGameObjects[i]
                     QString indexedAccessRegex = QString(R"(%1\[%2\])").arg(arrayVarName, loopVarName);
                     QRegularExpression indexedAccess(indexedAccessRegex);
 
-                    for (int j = i + 1; j < lines.size(); ++j)
+                    for (int j = lineNumber + 1; j < lines.size(); ++j)
                     {
                         QString line = lines[j].trimmed();
 
-                        // Check for direct usage of nodeGameObjects[i]
                         if (indexedAccess.match(line).hasMatch())
                         {
-                            // Add nodeGameObjects[i] to variableMap directly
                             QString indexedVariableName = QString("%1[%2]").arg(arrayVarName, loopVarName);
                             this->variableMap[indexedVariableName] = LuaVariableInfo{indexedVariableName, elementType, j + 1, "local"};
 
-                            // Check if it's being assigned to another variable (e.g., local x = nodeGameObjects[i])
-                            // QRegularExpression localVarAssignRegex(R"(local\s+(\w+)\s*=\s*%1\[%2\])".arg(arrayVarName, loopVarName));
                             QString localVarAssignRegexPattern = QString(R"(local\s+(\w+)\s*=\s*%1\[%2\])").arg(arrayVarName, loopVarName);
                             QRegularExpression localVarAssignRegex(localVarAssignRegexPattern);
                             QRegularExpressionMatch indexedMatch = localVarAssignRegex.match(line);
@@ -577,56 +696,10 @@ void LuaEditorModelItem::detectVariables(void)
                                 this->variableMap[localVar] = LuaVariableInfo{localVar, elementType, j + 1, "local"};
                             }
                         }
-                    }
-                }
-            }
-        }
-        else
-        {
-            // Checks if its a while loop
-            // Handle `while` loop variables (e.g., while i <= #nodes do ...)
-            QRegularExpression whileLoopRegex(R"(while\s+(\w+)\s*<=\s*#(\w+))");
-            QRegularExpressionMatch whileMatch = whileLoopRegex.match(line);
 
-            if (whileMatch.hasMatch())
-            {
-                QString loopVarName = whileMatch.captured(1);  // e.g., "i"
-                QString arrayVarName = whileMatch.captured(2);  // e.g., "nodeGameObjects"
-
-                if (this->variableMap.contains(arrayVarName))
-                {
-                    QString arrayType = this->variableMap[arrayVarName].type;
-                    if (arrayType.startsWith("Table[number][") && arrayType.endsWith("]"))
-                    {
-                        QString elementType = arrayType.mid(14, arrayType.length() - 15);
-
-                        QString indexedAccessRegex = QString(R"(%1\[%2\])").arg(arrayVarName, loopVarName);
-                        QRegularExpression indexedAccess(indexedAccessRegex);
-
-                        for (int j = i + 1; j < lines.size(); ++j)
+                        if (line == "end")
                         {
-                            QString line = lines[j].trimmed();
-
-                            if (indexedAccess.match(line).hasMatch())
-                            {
-                                QString indexedVariableName = QString("%1[%2]").arg(arrayVarName, loopVarName);
-                                this->variableMap[indexedVariableName] = LuaVariableInfo{indexedVariableName, elementType, j + 1, "local"};
-
-                                QString localVarAssignRegexPattern = QString(R"(local\s+(\w+)\s*=\s*%1\[%2\])").arg(arrayVarName, loopVarName);
-                                QRegularExpression localVarAssignRegex(localVarAssignRegexPattern);
-                                QRegularExpressionMatch indexedMatch = localVarAssignRegex.match(line);
-
-                                if (indexedMatch.hasMatch())
-                                {
-                                    QString localVar = indexedMatch.captured(1);
-                                    this->variableMap[localVar] = LuaVariableInfo{localVar, elementType, j + 1, "local"};
-                                }
-                            }
-
-                            if (line == "end")
-                            {
-                                break;
-                            }
+                            break;
                         }
                     }
                 }
@@ -635,6 +708,7 @@ void LuaEditorModelItem::detectVariables(void)
     }
 }
 
+#if 0
 QString LuaEditorModelItem::resolveMethodChainType(const QString& objectVar)
 {
     // Split object:method chain by ":" but also handle chains that are broken by spaces
@@ -698,6 +772,89 @@ QString LuaEditorModelItem::resolveMethodChainType(const QString& objectVar)
 
     return currentType;  // The resolved type of the last method in the chain
 }
+#else
+QString LuaEditorModelItem::resolveMethodChainType(const QString& objectVar)
+{
+    // Split object:method chain by ":" and then handle any dot properties
+    QStringList parts = objectVar.split(QRegularExpression("(:|\\.)"), Qt::SkipEmptyParts);
+
+    if (parts.isEmpty())
+    {
+        return "";
+    }
+
+    QString baseVar = parts.first();  // Base variable
+    QString currentType = this->variableMap.contains(baseVar) ? this->variableMap[baseVar].type : "";
+
+    if (currentType.isEmpty())
+    {
+        return "";  // No known type for the base variable
+    }
+
+    for (int i = 1; i < parts.size(); ++i)
+    {
+        QString part = parts[i];
+
+        // If the part is a method (ends with parentheses), resolve its return type
+        if (part.endsWith("()"))
+        {
+            QString methodName = part.left(part.size() - 2);  // Remove "()" from method name
+
+            // Get methods available for the current type
+            ApiModel::instance()->setSelectedClassName(currentType);
+            QVariantList methods = ApiModel::instance()->getMethodsForSelectedClass();
+
+            bool methodFound = false;
+            for (const QVariant& methodVariant : methods)
+            {
+                QVariantMap methodMap = methodVariant.toMap();
+                if (methodMap["name"].toString() == methodName)
+                {
+                    currentType = methodMap["returns"].toString().remove('(').remove(')');
+                    methodFound = true;
+                    break;
+                }
+            }
+
+            if (!methodFound)
+            {
+                return "";  // If method not found, stop processing
+            }
+        }
+        else
+        {
+            // No property handling, just set type to 'value', so no further recognition
+            currentType = "value";
+            return currentType;
+#if 0
+            // If it's a property (dot notation without parentheses), assume it's part of the type structure
+            ApiModel::instance()->setSelectedClassName(currentType);
+            QVariantList properties = ApiModel::instance()->getPropertiesForSelectedClass();
+
+            bool propertyFound = false;
+            for (const QVariant& propertyVariant : properties)
+            {
+                QVariantMap propertyMap = propertyVariant.toMap();
+                if (propertyMap["name"].toString() == part)
+                {
+                    currentType = propertyMap["type"].toString();
+                    propertyFound = true;
+                    break;
+                }
+            }
+
+            if (!propertyFound)
+            {
+                return "";  // Stop if property is not found
+            }
+#endif
+        }
+    }
+
+    return currentType;  // Return the resolved type of the last property or method
+}
+
+#endif
 
 LuaEditorModelItem::LuaVariableInfo LuaEditorModelItem::getClassForVariableName(const QString& variableName)
 {

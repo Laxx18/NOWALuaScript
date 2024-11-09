@@ -44,6 +44,8 @@ public:
     Q_INVOKABLE void openProjectFolder(void);
 
     Q_INVOKABLE void sendTextToEditor(const QString& text);
+
+    Q_INVOKABLE void setSelectedSearchText(const QString& searchText);
 public:
     Q_PROPERTY(bool hasChanges READ getHasChanges NOTIFY hasChangesChanged FINAL)
 
@@ -102,6 +104,8 @@ Q_SIGNALS:
     void signal_requestSaveLuaScript(const QString& filePathName, const QString& content);
 
     void signal_luaScriptAdded(const QString& filePathName, const QString& content);
+
+    void signal_setSelectedSearchText(const QString& searchText);
 
     void hasChangesChanged();
 

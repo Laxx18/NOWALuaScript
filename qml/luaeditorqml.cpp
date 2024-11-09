@@ -177,14 +177,22 @@ void LuaEditorQml::onParentChanged(QQuickItem* newParent)
     this->highlighter->setDocument(quickTextDocument->textDocument());
 
     this->highlighter->setCursorPosition(0);
-
-    // Connect to the textChanged signal
-    // QObject::connect(this->luaEditorTextEdit, SIGNAL(textChanged()), this, SLOT(onTextChanged()));
 }
 
-void LuaEditorQml::onTextChanged()
+void LuaEditorQml::highlightWordUnderCursor(const QString& word)
 {
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->searchInTextEdit(word, true, true);
+    }
+}
 
+void LuaEditorQml::clearHighlightWordUnderCursor()
+{
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->clearSearch();
+    }
 }
 
 void LuaEditorQml::resetTextAfterColon()
@@ -560,6 +568,9 @@ void LuaEditorQml::clearRuntimeError()
 
 void LuaEditorQml::cursorPositionChanged(int cursorPosition)
 {
-    this->highlighter->setCursorPosition(cursorPosition);
-    this->cursorPosition = cursorPosition;
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->setCursorPosition(cursorPosition);
+        this->cursorPosition = cursorPosition;
+    }
 }

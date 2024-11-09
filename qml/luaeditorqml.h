@@ -30,6 +30,10 @@ public:
      Q_INVOKABLE void handleKeywordPressed(QChar keyword);
 
      Q_INVOKABLE void updateContentY(qreal contentY);
+
+     Q_INVOKABLE void highlightWordUnderCursor(const QString& word);
+
+     Q_INVOKABLE void clearHighlightWordUnderCursor(void);
 public:
     // IMPORANT: parent MUST be by default Q_NULLPTR! Else: If creating for QML: Element is not createable will occur!!!
     // See: https://forum.qt.io/topic/155986/qt6-qabstractlistmodel-constructor-with-two-arguments-qml-element-is-not-creatable/2
@@ -49,7 +53,6 @@ public:
 
 public slots:
     void onParentChanged(QQuickItem* newParent);
-    void onTextChanged(void);
 Q_SIGNALS:
     void modelChanged();
     void requestIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY);

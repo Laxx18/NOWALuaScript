@@ -25,7 +25,7 @@ AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScrip
         this->fileWatcher.addPath(this->watchFilePathName);
 
         // Call the function when the file changes
-        this->readAndDeleteXmlFile(this->watchFilePathName);
+        this->eatXmlFile(this->watchFilePathName);
     }
     else
     {
@@ -47,7 +47,7 @@ void AppCommunicator::onFileChanged(const QString& path)
     {
         // showWindowsMessageBox("onFileChanged", "Received Lua script path: " + path);
         // Call the function when the file changes
-        this->readAndDeleteXmlFile(path);
+        this->eatXmlFile(path);
 
         // Re-add the file to the watcher if it exists (file may have been deleted/recreated)
         if (!this->fileWatcher.files().contains(path) && QFileInfo::exists(path))
@@ -69,7 +69,7 @@ void AppCommunicator::onDirectoryChanged(const QString& path)
         // showWindowsMessageBox("onDirectoryChanged", "Received Lua script path: " + dataFilePath);
 
         // Call the function when the file changes
-        this->readAndDeleteXmlFile(dataFilePath);
+        this->eatXmlFile(dataFilePath);
 
         // Check if the file now exists and add it to the watcher
         if (!this->fileWatcher.files().contains(this->watchFilePathName) && QFileInfo::exists(this->watchFilePathName))
@@ -138,13 +138,12 @@ void AppCommunicator::showWindowsMessageBox(const QString &title, const QString 
 //     return false;
 // }
 
-void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
+void AppCommunicator::eatXmlFile(const QString& filePath)
 {
     QFile file(filePath);
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        qWarning() << "Failed to open the XML file for reading.";
         return;
     }
 
@@ -218,7 +217,7 @@ void AppCommunicator::readAndDeleteXmlFile(const QString& filePath)
         this->ptrLuaScriptController->slot_createLuaScript(filePathName);
     }
 
-#if 0
+#if 1
     // Delete the file after reading
     if (QFile::remove(filePath))
     {

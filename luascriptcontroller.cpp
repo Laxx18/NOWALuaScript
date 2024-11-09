@@ -73,28 +73,6 @@ void LuaScriptController::slot_createLuaScript(const QString& filePathName)
     }
 
     QQmlEngine::setObjectOwnership(luaEditorModel, QQmlEngine::CppOwnership);
-#if 0
-    connect(pNodeModel, &Workbench_Internal__NodeModel::sig_toggleBreakPointOnNode, this, &CanvasItemController::slot_toggleNodeBreak);
-    connect(pNodeModel, &Workbench_Internal__NodeModel::sig_toggleMute, this, &CanvasItemController::slot_toggleNodeMute);
-    connect(pNodeModel, &Workbench_Internal__NodeModel::sig_rename, this, &CanvasItemController::slot_renameNode);
-    connect(pNodeModel, &Workbench_Internal__NodeModel::sig_rename, MeasurementProvider::instance(), &MeasurementProvider::renameMeasurementNode);
-
-    // Is just called, after dragging is completed and will not overflow the event system
-    connect(pNodeModel, &Workbench_Internal__NodeModel::xChanged, this, &CanvasItemController::slot_sendChangesFlag);
-    connect(pNodeModel, &Workbench_Internal__NodeModel::yChanged, this, &CanvasItemController::slot_sendChangesFlag);
-#endif
-
-#if 0
-    // Create the corresponding LuaEditorQml item
-    LuaEditorQml* luaEditorQml = new LuaEditorQml();
-    QQmlEngine::setObjectOwnership(luaEditorQml, QQmlEngine::CppOwnership);
-
-    // You can initialize properties here if needed (e.g., tempFilePathName)
-    luaEditorQml->setProperty("filePathName", tempFilePathName);
-    luaEditorQml->setModel(luaEditorModelItem);
-
-    this->luaEditorQmls.append(luaEditorQml);
-#endif
 
     LuaEditorQml* luaEditorQml = this->createNewLuaEditorQml();
     if (Q_NULLPTR == luaEditorQml)
@@ -244,7 +222,7 @@ LuaEditorQml* LuaScriptController::createNewLuaEditorQml(void)
     luaEditorQml->setParentItem(this->luaEditorContainer);
     luaEditorQml->setParent(this->qmlEngine);
     luaEditorQml->setWidth(this->luaEditorContainer->width() - 12);
-    luaEditorQml->setHeight(800.0f);
+    // luaEditorQml->setHeight(1000.0f);
 
     return luaEditorQml;
 }

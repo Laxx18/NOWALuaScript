@@ -18,7 +18,7 @@ public:
 
     void showWindowsMessageBox(const QString& title, const QString& message);
 
-    void readAndDeleteXmlFile(const QString& filePath);
+    void eatXmlFile(const QString& filePath);
 
     bool isInstanceRunning(void);
 

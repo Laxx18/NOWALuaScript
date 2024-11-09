@@ -202,7 +202,7 @@ MenuBar
         Action
         {
             text: qsTr("Unshift Lines");
-            icon.name: "text-comment";  // Might need to check availability
+            icon.name: "Tab";  // Might need to check availability
             onTriggered: NOWALuaEditorModel.removeTabFromSelection();
         }
 

@@ -65,33 +65,6 @@ Window
             placeholderText: "Enter text to search";
             Layout.fillWidth: true;
 
-            // Keys.onPressed:
-            // {
-            //     // Disable undo/redo when the dialog is open
-            //     if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier))
-            //     {
-            //         event.accepted = true; // Prevent undo
-            //     }
-            //     else if (event.key === Qt.Key_Y && (event.modifiers & Qt.ControlModifier))
-            //     {
-            //         event.accepted = true; // Prevent redo
-            //     }
-            //     else if (event.key === Qt.Key_Escape)
-            //     {
-            //         searchDialog.visible = false;
-            //         event.accepted = true; // Accept event for closing the dialog
-            //     }
-            //     else if (event.key === Qt.Key_Return)
-            //     {
-            //         // Handle the return key if needed (e.g., trigger search)
-            //         event.accepted = true;
-            //     }
-            //     else
-            //     {
-            //         event.accepted = false; // Allow other keys to propagate
-            //     }
-            // }
-
             Keys.onReturnPressed:
             {
                 NOWALuaEditorModel.searchInTextEdit(searchField.text, searchWindow.wholeWord, searchWindow.caseSensitive);
@@ -158,6 +131,20 @@ Window
                     searchWindow.visible = false;
                     NOWALuaEditorModel.clearSearch();
                 }
+            }
+        }
+    }
+
+    Connections
+    {
+        target: NOWALuaEditorModel;
+
+        function onSignal_setSelectedSearchText(searchText)
+        {
+            if (searchText !== "")
+            {
+                searchField.text = searchText;
+                NOWALuaEditorModel.setSelectedSearchText("");
             }
         }
     }

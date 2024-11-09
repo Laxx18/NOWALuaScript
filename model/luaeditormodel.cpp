@@ -349,6 +349,11 @@ void LuaEditorModel::sendTextToEditor(const QString& text)
     }
 }
 
+void LuaEditorModel::setSelectedSearchText(const QString& searchText)
+{
+    Q_EMIT signal_setSelectedSearchText(searchText);
+}
+
 void LuaEditorModel::updateTitle(int row, const QString& newTitle)
 {
     if (row < 0 || row >= this->luaScripts.count())

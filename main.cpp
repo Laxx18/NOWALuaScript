@@ -67,11 +67,13 @@ int main(int argc, char *argv[])
                          }
                      });
 
+#ifdef QT_NO_DEBUG
     if (true == ptrAppCommunicator->isInstanceRunning())
     {
         qDebug() << "Instance is already running.";
         return 0;
     }
+#endif
 
     // After QML is ready, set a potential first lua script and load it, if it comes from the args
     if (false == initialLuaScriptPath.isEmpty())

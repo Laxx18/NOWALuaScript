@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 import NOWALuaScript
 
@@ -10,6 +11,7 @@ LuaEditorQml
     // Is done in C++
     // width: parent.width - 12;
     // height: 800;
+
     focus: true;
 
     Component.onCompleted:
@@ -57,249 +59,300 @@ LuaEditorQml
         }
     }
 
-    Flickable
+    ColumnLayout
     {
-        id: flickable;
         width: parent.width;
         height: parent.height;
 
-        contentWidth: luaEditor.contentWidth;  // Content width is equal to the width of the TextEdit
-        contentHeight: luaEditor.contentHeight + 12; // Ensure extra space for last line
-        clip: true;  // Clip content that exceeds the viewable area
-        // Dangerous!
-        // interactive: false; // Prevent flickable from capturing input events
-
-        boundsBehavior: Flickable.StopAtBounds;
-
-        ScrollBar.vertical: ScrollBar
+        Flickable
         {
-            width: 20;
-            x: flickable.width - 12;
-            policy: ScrollBar.AlwaysOn;
-        }
+            id: flickable;
 
-        // MouseArea
-        // {
-        //     anchors.fill: parent;
-        //     propagateComposedEvents: true;
+            Layout.fillWidth: true;
+            Layout.fillHeight: true;
 
-        //     onClicked:
-        //     {
-        //         // Ensure luaEditor receives focus on click
-        //         luaEditor.forceActiveFocus();
-        //     }
-        // }
+            contentWidth: luaEditor.contentWidth;  // Content width is equal to the width of the TextEdit
+            contentHeight: luaEditor.contentHeight + 12; // Ensure extra space for last line
+            clip: true;  // Clip content that exceeds the viewable area
+            // Dangerous!
+            // interactive: false; // Prevent flickable from capturing input events
 
-        // Synchronize scroll position
-        function ensureVisible(r)
-        {
-            if (root.isInsertingNewLine)
+            boundsBehavior: Flickable.StopAtBounds;
+
+            ScrollBar.vertical: ScrollBar
             {
-                // Do nothing if a new line is being inserted, because it corrupts the "r" with wrong values and so there is always an ugly jump
-                return;
+                width: 20;
+                x: flickable.width - 12;
+                policy: ScrollBar.AlwaysOn;
             }
 
-            if (contentX >= r.x)
+            // MouseArea
+            // {
+            //     anchors.fill: parent;
+            //     propagateComposedEvents: true;
+
+            //     onClicked:
+            //     {
+            //         // Ensure luaEditor receives focus on click
+            //         luaEditor.forceActiveFocus();
+            //     }
+            // }
+
+            // Synchronize scroll position
+            function ensureVisible(r)
             {
-                contentX = r.x;
-            }
-            else if (contentX + width <= r.x + r.width)
-            {
-                contentX = r.x + r.width - width;
-            }
-            if (contentY >= r.y)
-            {
-                contentY = r.y;
-            }
-            else if (contentY + height <= r.y + r.height)
-            {
-                contentY = r.y + r.height - height;
-            }
-        }
-
-        onContentYChanged:
-        {
-            root.updateContentY(contentY);
-        }
-
-        Row
-        {
-            width: flickable.width;
-
-            // Line Number View
-            TextEdit
-            {
-                id: lineNumbersEdit;
-                objectName: "lineNumbersEdit";
-
-                readOnly: true;
-                width: 50;
-                padding: 8;
-                wrapMode: TextEdit.NoWrap;
-                color: textColor;
-                font.family: luaEditor.font.family;
-                font.pixelSize: luaEditor.font.pixelSize;
-
-                // // Keep line numbers updated
-                Component.onCompleted: updateLineNumbers();
-                onTextChanged: updateLineNumbers();
-
-                function updateLineNumbers()
+                if (root.isInsertingNewLine)
                 {
-                    var lineCount = luaEditor.text.split("\n").length;
-                    var lineText = "";
-                    for (var i = 1; i <= lineCount; i++)
-                    {
-                        lineText += i + "\n";
-                    }
-                    lineNumbersEdit.text = lineText;
+                    // Do nothing if a new line is being inserted, because it corrupts the "r" with wrong values and so there is always an ugly jump
+                    return;
                 }
 
-                onCursorRectangleChanged:
+                if (contentX >= r.x)
                 {
-                    flickable.ensureVisible(cursorRectangle);
+                    contentX = r.x;
+                }
+                else if (contentX + width <= r.x + r.width)
+                {
+                    contentX = r.x + r.width - width;
+                }
+                if (contentY >= r.y)
+                {
+                    contentY = r.y;
+                }
+                else if (contentY + height <= r.y + r.height)
+                {
+                    contentY = r.y + r.height - height;
                 }
             }
 
-            // Lua Code Editor
-            TextEdit
+            onContentYChanged:
             {
-                id: luaEditor;
-                objectName: "luaEditor";
+                root.updateContentY(contentY);
+            }
 
-                Component.onCompleted: lineNumbersEdit.updateLineNumbers();
+            Row
+            {
+                width: flickable.width;
 
-                width: parent.width - 12;
-                height: parent.height;
-                padding: 8;
-
-                font.pixelSize: 14;
-
-                textFormat: TextEdit.AutoText;
-                wrapMode: TextEdit.Wrap;
-                focus: true;
-                activeFocusOnPress: true; // Enable focus on press for text selection
-                color: textColor;
-                selectByMouse: true;
-                persistentSelection: true;
-                selectedTextColor: "black";
-                selectionColor: "lightgreen";
-
-                Keys.onPressed: (event) =>
+                // Line Number View
+                TextEdit
                 {
-                    // If context menu is shown, relay those key to the context menu for navigation
-                    if (NOWAApiModel.isIntellisenseShown)
+                    id: lineNumbersEdit;
+                    objectName: "lineNumbersEdit";
+
+                    readOnly: true;
+                    width: 50;
+                    padding: 8;
+                    wrapMode: TextEdit.NoWrap;
+                    color: textColor;
+                    font.family: luaEditor.font.family;
+                    font.pixelSize: luaEditor.font.pixelSize;
+
+                    // // Keep line numbers updated
+                    Component.onCompleted: updateLineNumbers();
+                    onTextChanged: updateLineNumbers();
+
+                    function updateLineNumbers()
                     {
-                        if (event.key === Qt.Key_Tab || event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                        var lineCount = luaEditor.text.split("\n").length;
+                        var lineText = "";
+                        for (var i = 1; i <= lineCount; i++)
                         {
-                            LuaScriptQmlAdapter.relayKeyPress(event.key);
-                            event.accepted = true; // Prevents default behavior if necessary
-                            return;
+                            lineText += i + "\n";
+                        }
+                        lineNumbersEdit.text = lineText;
+                    }
+
+                    onCursorRectangleChanged:
+                    {
+                        flickable.ensureVisible(cursorRectangle);
+                    }
+                }
+
+                // Lua Code Editor
+                TextEdit
+                {
+                    id: luaEditor;
+                    objectName: "luaEditor";
+
+                    Component.onCompleted: lineNumbersEdit.updateLineNumbers();
+
+                    width: parent.width - 12;
+                    height: parent.height;
+                    padding: 8;
+
+                    font.pixelSize: 14;
+
+                    textFormat: TextEdit.AutoText;
+                    wrapMode: TextEdit.Wrap;
+                    focus: true;
+                    activeFocusOnPress: true; // Enable focus on press for text selection
+                    color: textColor;
+                    selectByMouse: true;
+                    persistentSelection: true;
+                    selectedTextColor: "black";
+                    selectionColor: "lightgreen";
+
+                    Keys.onPressed: (event) =>
+                    {
+                        // If context menu is shown, relay those key to the context menu for navigation
+                        if (NOWAApiModel.isIntellisenseShown)
+                        {
+                            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                            {
+                                LuaScriptQmlAdapter.relayKeyPress(event.key);
+                                event.accepted = true; // Prevents default behavior if necessary
+                                return;
+                            }
+                        }
+                        if (event.key === Qt.Key_Tab)
+                        {
+                            NOWALuaEditorModel.addTabToSelection();
+                            // Prevent the default Tab behavior
+                            event.accepted = true;
+                        }
+                        else if (event.key === Qt.Key_Return)
+                        {
+                            // Prevent the default Return behavior
+                            event.accepted = true;
+                            NOWALuaEditorModel.breakLine();
+                        }
+                        else if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier))
+                        {
+                            event.accepted = true; // Prevent text edit undo
+                            NOWALuaEditorModel.undo();
+                        }
+                        else if (event.key === Qt.Key_Y && (event.modifiers & Qt.ControlModifier))
+                        {
+                            event.accepted = true; // Prevent text edit redo
+                            NOWALuaEditorModel.redo();
+                        }
+                        else
+                        {
+                            root.handleKeywordPressed(event.text);
                         }
                     }
-                    if (event.key === Qt.Key_Tab)
+
+                    onTextChanged:
                     {
-                        // Prevent the default Tab behavior
-                        event.accepted = true;
-                    }
-                    else if (event.key === Qt.Key_Return)
-                    {
-                        // Prevent the default Return behavior
-                        event.accepted = true;
-                        NOWALuaEditorModel.breakLine();
-                    }
-                    else if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier))
-                    {
-                        event.accepted = true; // Prevent text edit undo
-                        NOWALuaEditorModel.undo();
-                    }
-                    else if (event.key === Qt.Key_Y && (event.modifiers & Qt.ControlModifier))
-                    {
-                        event.accepted = true; // Prevent text edit redo
-                        NOWALuaEditorModel.redo();
-                    }
-                    else
-                    {
-                        root.handleKeywordPressed(event.text);
-                    }
-                }
+                        checkSyntaxTimer.restart();
+                        lineNumbersEdit.updateLineNumbers();  // Sync line numbers on text change
 
-                onTextChanged:
-                {
-                    checkSyntaxTimer.restart();
-                    lineNumbersEdit.updateLineNumbers();  // Sync line numbers on text change
-
-                    // // Sets new changes to model
-                    if (root.model)
-                    {
-                        root.model.content = luaEditor.text;
-                    }
-                }
-
-                onCursorRectangleChanged:
-                {
-                    flickable.ensureVisible(cursorRectangle);
-                }
-
-                onCursorPositionChanged:
-                {
-                    // Notify C++ whenever the cursor changes
-                    root.cursorPositionChanged(cursorPosition);
-                }
-
-                // Add MouseArea to track the mouse position
-                // MouseArea
-                // {
-                //     id: mouseTracker;
-                //     anchors.fill: parent;
-                //     hoverEnabled: true;
-                //     acceptedButtons: Qt.NoButton  // This allows text interaction to pass through
-
-                //     property real mouseX: 0;
-                //     property real mouseY: 0;
-
-                //     onPositionChanged: (mouse) =>
-                //     {
-                //         mouseX = mouse.x;
-                //         mouseY = mouse.y;
-                //     }
-                // }
-
-                Connections
-                {
-                    target: LuaScriptQmlAdapter;
-
-                    function onSignal_syntaxCheckResult(filePathName, valid, line, start, end, message)
-                    {
-                        if (filePathName === root.model.filePathName)
+                        // // Sets new changes to model
+                        if (root.model)
                         {
-                            if (!valid)
+                            root.model.content = luaEditor.text;
+                        }
+                    }
+
+                    onCursorRectangleChanged:
+                    {
+                        flickable.ensureVisible(cursorRectangle);
+                    }
+
+                    onCursorPositionChanged:
+                    {
+                        // Notify C++ whenever the cursor changes
+                        root.cursorPositionChanged(cursorPosition);
+                    }
+
+                    // Track changes in selected text
+                        onSelectedTextChanged:
+                        {
+                            if (luaEditor.selectedText.length > 0)
                             {
-                                root.highlightError(line, start, end); // Highlight the error line
+                                // A word was selected, trigger the search in LuaHighlighter
+                                root.highlightWordUnderCursor(luaEditor.selectedText);
+                                NOWALuaEditorModel.setSelectedSearchText(luaEditor.selectedText);
                             }
                             else
                             {
-                                root.clearError(); // Clear the error highlight
+                                root.clearHighlightWordUnderCursor();
+                            }
+                        }
+
+                    // Add MouseArea to track the mouse position
+                    // MouseArea
+                    // {
+                    //     id: mouseTracker;
+                    //     anchors.fill: parent;
+                    //     hoverEnabled: true;
+                    //     acceptedButtons: Qt.NoButton  // This allows text interaction to pass through
+
+                    //     property real mouseX: 0;
+                    //     property real mouseY: 0;
+
+                    //     onPositionChanged: (mouse) =>
+                    //     {
+                    //         mouseX = mouse.x;
+                    //         mouseY = mouse.y;
+                    //     }
+                    // }
+
+                    Connections
+                    {
+                        target: LuaScriptQmlAdapter;
+
+                        function onSignal_syntaxCheckResult(filePathName, valid, line, start, end, message)
+                        {
+                            if (filePathName === root.model.filePathName)
+                            {
+                                if (!valid)
+                                {
+                                    root.highlightError(line, start, end); // Highlight the error line
+                                }
+                                else
+                                {
+                                    root.clearError(); // Clear the error highlight
+                                }
+                            }
+                        }
+
+                        function onSignal_runtimeErrorResult(filePathName, valid, line, start, end, message)
+                        {
+                            if (filePathName === root.model.filePathName)
+                            {
+                                if (!valid)
+                                {
+                                    root.highlightRuntimeError(line, start, end); // Highlight the error line
+                                }
+                                else
+                                {
+                                    root.clearRuntimeError(); // Clear the error highlight
+                                }
                             }
                         }
                     }
 
-                    function onSignal_runtimeErrorResult(filePathName, valid, line, start, end, message)
+                    Connections
                     {
-                        if (filePathName === root.model.filePathName)
+                        target: NOWALuaEditorModel;
+
+                        function onSignal_luaScriptAdded(filePathName, content)
                         {
-                            if (!valid)
+                            if (filePathName === root.model.filePathName)
                             {
-                                root.highlightRuntimeError(line, start, end); // Highlight the error line
-                            }
-                            else
-                            {
-                                root.clearRuntimeError(); // Clear the error highlight
+                                luaEditor.text = content;
                             }
                         }
                     }
                 }
             }
+        }
+
+        Rectangle
+        {
+            Layout.fillWidth: true;
+            Layout.preferredHeight: 10;
+            color: "darkslategrey";
+        }
+
+        DetailsArea
+        {
+            Layout.fillWidth: true;
+            Layout.preferredHeight: 110;
+
+            filePathName: root.model.filePathName;
         }
     }
 
@@ -318,45 +371,5 @@ LuaEditorQml
     {
         id: fontMetrics;
         font: luaEditor.font;
-    }
-
-    ListView
-    {
-        id: suggestionsList;
-        width: parent.width;
-        height: parent.height * 0.2;
-        model: luaSuggestionsModel;
-
-        visible: false;
-
-        delegate: Item
-        {
-            width: parent.width;
-            height: 30;
-
-            Text
-            {
-                text: model.name;
-                font.pixelSize: 18;
-            }
-        }
-
-        ListModel
-        {
-            id: luaSuggestionsModel;
-        }
-
-        Connections
-        {
-            target: NOWALuaEditorModel;
-
-            function onSignal_luaScriptAdded(filePathName, content)
-            {
-                if (filePathName === root.model.filePathName)
-                {
-                    luaEditor.text = content;
-                }
-            }
-        }
     }
 }

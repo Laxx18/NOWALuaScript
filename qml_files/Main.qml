@@ -9,6 +9,8 @@ import NOWALuaScript
 
 ApplicationWindow
 {
+    id: root;
+
     visible: true;
     minimumWidth: 800;
     minimumHeight: 800;
@@ -24,8 +26,6 @@ ApplicationWindow
     Material.background: "#1E1E1E";
 
     color: "darkslategrey";
-
-    id: root;
 
     menuBar: MainMenu
     {
@@ -44,7 +44,7 @@ ApplicationWindow
         {
             id: tabBar;
 
-            width: parent.width;
+            width: parent.width  // Set TabBar width to match the toolbar width
 
             onCurrentIndexChanged:
             {
@@ -73,9 +73,10 @@ ApplicationWindow
                     {
                         text: "x";
                         font.pixelSize: 14;
+
                         anchors.right: parent.right;
                         anchors.rightMargin: 8;
-                        anchors.bottomMargin: 4;
+                        anchors.bottomMargin: 2;
 
                         onClicked:
                         {
@@ -84,29 +85,15 @@ ApplicationWindow
                     }
                 }
             }
-
-            // Button to add new LuaEditor tab
-            // TabButton
-            // {
-            //     text: "+";
-            //     font.pixelSize: 18;
-            //     onClicked:
-            //     {
-            //         if (NOWALuaEditorModel.count() < 10) // Limit to 10 editors
-            //         {
-            //             // TODO Via menu and fileopendialog set the filepath name and what about a caption?
-            //             NOWALuaEditorModel.requestAddLuaScript("New Lua Script" + (NOWALuaEditorModel.count() + 1))
-            //             tabBar.openTabs++;
-            //         }
-            //     }
-            // }
         }
     }
 
-    footer: DetailsArea
-    {
-        // filePathName: NOWALuaEditorModel.getLuaScript(tabBar.currentIndex).filePathName;
-    }
+    // footer: Rectangle
+    // {
+    //     height: 20;
+    //     width: parent.width;
+    //     color: "red";
+    // }
 
     StackLayout
     {
@@ -115,6 +102,7 @@ ApplicationWindow
         objectName: "luaEditorContainer";
 
         width: parent.width;
+        height: root.height * 0.95;
         currentIndex: tabBar.currentIndex;
     }
 
@@ -213,7 +201,7 @@ ApplicationWindow
 
     Shortcut
     {
-        sequence: "Shift+Tab";
+        sequence: "Tab";
         onActivated:
         {
             NOWALuaEditorModel.addTabToSelection();
@@ -222,7 +210,7 @@ ApplicationWindow
 
     Shortcut
     {
-        sequence: "Ctrl+Tab";
+        sequence: "Shift+Tab";
         onActivated:
         {
             NOWALuaEditorModel.removeTabFromSelection();
