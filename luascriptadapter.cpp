@@ -1,6 +1,5 @@
 #include "luascriptadapter.h"
 
-#include <QThread>
 #include <QDebug>
 
 #include <QFileInfo>
@@ -55,44 +54,23 @@ QPair<int, LuaEditorModelItem*> LuaScriptAdapter::createLuaScript(const QString&
         return qMakePair(index, Q_NULLPTR);
     }
 
-    // TODO: Set file name
     LuaScript* luaScript = new LuaScript(filePathName);
     bool success = luaScript->loadScriptFromFile(filePathName);
     if (false == success)
     {
         return qMakePair(-1, Q_NULLPTR);
     }
-
-    // Create a new thread
-    QThread* thread = new QThread(this);
-
-    // Move the backend to the new thread
-    luaScript->moveToThread(thread);
-
     this->luaScripts.append(luaScript);
 
     connect(luaScript, &LuaScript::signal_syntaxCheckResult, this, [this, luaScript](bool valid, int line, int start, int end, const QString& message)
             {
                          Q_EMIT signal_syntaxCheckResult(luaScript->getFilePathName(), valid, line, start, end, message);
-            }, Qt::QueuedConnection);
+            });
 
     connect(luaScript, &LuaScript::signal_runtimeError, this, [this, luaScript](bool valid, int line, int start, int end, const QString& message)
             {
                 Q_EMIT signal_runtimeError(luaScript->getFilePathName(), valid, line, start, end, message);
-            }, Qt::QueuedConnection);
-
-
-    // Start the thread
-    thread->start();
-
-    // Make sure to quit the thread properly when the UmlDotController is destroyed
-    QObject::connect(this, &QObject::destroyed, thread, [thread]()
-    {
-        thread->quit();
-        thread->wait();  // Wait for the thread to finish
-        thread->deleteLater();  // Safe deletion after the thread is done
-    });
-    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+            });
 
     LuaEditorModelItem* luaEditorModelItem = new LuaEditorModelItem(this);
 
@@ -141,30 +119,13 @@ bool LuaScriptAdapter::removeLuaScript(const QString& filePathName)
         return false;
     }
 
-    // Retrieve the thread that the LuaScript is running on
-    QThread* thread = luaScript->thread();
-
-    if (Q_NULLPTR == thread)
-    {
-        qWarning() << "Thread for LuaScript with filePathName" << filePathName << "is null.";
-        return false;
-    }
-
     // Clean up connections to the LuaScript and stop the thread
     disconnect(luaScript, Q_NULLPTR, this, Q_NULLPTR);
-
-    // Quit the thread safely and remove LuaScript after it has stopped
-    QObject::connect(thread, &QThread::finished, luaScript, &QObject::deleteLater);
-
-    // Quit the thread and wait for it to finish
-    thread->quit();
-    thread->wait();
 
     // Now that the LuaScript has been cleaned up, remove it from the QHash
     this->luaScripts.takeAt(index);
 
-    // Clean up the thread itself
-    thread->deleteLater();
+    luaScript->deleteLater();
 
     qDebug() << "LuaScript with filePathName" << filePathName << "has been removed.";
 

@@ -18,11 +18,15 @@ public:
 
     void showWindowsMessageBox(const QString& title, const QString& message);
 
-    void eatXmlFile(const QString& filePath);
+    void readXmlFile(const QString& filePath);
 
     bool isInstanceRunning(void);
 
     QString getRunningFilePath(void) const;
+
+    void deleteCommunicationFile(void);
+
+    void deleteRunningFile(void);
 private slots:
     void onFileChanged(const QString& path);
 

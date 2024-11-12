@@ -17,6 +17,7 @@ AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScrip
     : QObject(parent),
     ptrLuaScriptController(ptrLuaScriptController)
 {
+#if 0
     this->watchFilePathName = QString(TARGET_PATH) + "/NOWALuaScript/bin/lua_script_data.xml";
 
     if (QFileInfo::exists(this->watchFilePathName))
@@ -25,18 +26,35 @@ AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScrip
         this->fileWatcher.addPath(this->watchFilePathName);
 
         // Call the function when the file changes
-        this->eatXmlFile(this->watchFilePathName);
+        this->readXmlFile(this->watchFilePathName);
     }
     else
     {
         qDebug() << "File does not exist. Watching directory for creation.";
         this->fileWatcher.addPath(QFileInfo(this->watchFilePathName).absolutePath());
     }
-
-
-
     connect(&this->fileWatcher, &QFileSystemWatcher::fileChanged, this, &AppCommunicator::onFileChanged);
     connect(&this->fileWatcher, &QFileSystemWatcher::directoryChanged, this, &AppCommunicator::onDirectoryChanged);
+#else
+    // Set the path to the directory instead of a specific file
+    QString watchDirectory = QString(TARGET_PATH) + "/NOWALuaScript/bin/";
+    this->fileWatcher.addPath(watchDirectory);
+
+    // Connect to the directoryChanged signal
+    connect(&fileWatcher, &QFileSystemWatcher::directoryChanged, this, [=](const QString& path)
+    {
+        QTimer::singleShot(100, [=]() {  // Adjust the delay as needed
+            QDir dir(watchDirectory);
+            QStringList xmlFiles = dir.entryList({"*.xml"}, QDir::Files);
+
+            for (const QString& fileName : xmlFiles)
+            {
+                qDebug() << "Detected change in XML file:" << fileName;
+                this->readXmlFile(watchDirectory + "/" + fileName);
+            }
+        });
+    });
+#endif
 }
 
 void AppCommunicator::onFileChanged(const QString& path)
@@ -47,7 +65,7 @@ void AppCommunicator::onFileChanged(const QString& path)
     {
         // showWindowsMessageBox("onFileChanged", "Received Lua script path: " + path);
         // Call the function when the file changes
-        this->eatXmlFile(path);
+        this->readXmlFile(path);
 
         // Re-add the file to the watcher if it exists (file may have been deleted/recreated)
         if (!this->fileWatcher.files().contains(path) && QFileInfo::exists(path))
@@ -69,7 +87,7 @@ void AppCommunicator::onDirectoryChanged(const QString& path)
         // showWindowsMessageBox("onDirectoryChanged", "Received Lua script path: " + dataFilePath);
 
         // Call the function when the file changes
-        this->eatXmlFile(dataFilePath);
+        this->readXmlFile(dataFilePath);
 
         // Check if the file now exists and add it to the watcher
         if (!this->fileWatcher.files().contains(this->watchFilePathName) && QFileInfo::exists(this->watchFilePathName))
@@ -138,12 +156,13 @@ void AppCommunicator::showWindowsMessageBox(const QString &title, const QString 
 //     return false;
 // }
 
-void AppCommunicator::eatXmlFile(const QString& filePath)
+void AppCommunicator::readXmlFile(const QString& filePath)
 {
     QFile file(filePath);
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
+        qWarning() << "Error opening file:" << filePath;
         return;
     }
 
@@ -258,4 +277,23 @@ bool AppCommunicator::isInstanceRunning(void)
 QString AppCommunicator::getRunningFilePath(void) const
 {
     return this->runningFilePath;
+}
+
+void AppCommunicator::deleteCommunicationFile(void)
+{
+    QString communicationFile = QString(TARGET_PATH) + "/NOWALuaScript/bin/lua_script_data.xml";
+    // Delete the file after reading
+    if (QFile::remove(communicationFile))
+    {
+        qDebug() << "Commuication XML file deleted successfully.";
+    }
+}
+
+void AppCommunicator::deleteRunningFile(void)
+{
+    // Delete the file after reading
+    if (QFile::remove(this->runningFilePath))
+    {
+        qDebug() << "Running file deleted successfully.";
+    }
 }

@@ -11,8 +11,8 @@ Rectangle
     height: 110;
     color: "white";
 
-    border.color: "darkgrey";
-    border.width: 2;
+    // border.color: "darkslategray";
+    // border.width: 2;
 
     property bool hasRuntimeError: false;
     property string filePathName: "";
@@ -23,11 +23,11 @@ Rectangle
     Flickable
     {
         id: flickable;
+
         width: parent.width;
         height: parent.height;
-
-        contentWidth: detailsText.contentWidth;
-        contentHeight: detailsText.contentHeight;
+        contentWidth: detailsText.width;
+        contentHeight: detailsText.height;
         clip: true;
 
         boundsBehavior: Flickable.StopAtBounds;
@@ -54,21 +54,24 @@ Rectangle
 
         ScrollBar.vertical: ScrollBar
         {
-            width: 20;
-            x: flickable.width - 12;
+            id: verticalScrollBar;
+            anchors.top: parent.top;
+            anchors.bottom: parent.bottom;
+            hoverEnabled: true;
+            active: pressed || hovered;
+            policy: flickable.contentHeight > flickable.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff;
         }
 
         TextEdit
         {
             id: detailsText;
 
+            width: flickable.width - 16;
             padding: 8;
 
-            textFormat: TextEdit.PlainText;
             wrapMode: TextEdit.Wrap;
             focus: true;
             readOnly: true;
-            activeFocusOnPress: true;
             selectByMouse: true;
             persistentSelection: true;
 
@@ -77,7 +80,7 @@ Rectangle
             selectedTextColor: "black";
             selectionColor: "lightgreen";
 
-            text: root.syntaxErrorText + (root.syntaxErrorText !== "" && root.runtimeErrorText !== "" ? "\n" : "") + root.runtimeErrorText
+            text: root.syntaxErrorText + (root.syntaxErrorText !== "" && root.runtimeErrorText !== "" ? "\n" : "") + root.runtimeErrorText;
 
             onCursorRectangleChanged:
             {

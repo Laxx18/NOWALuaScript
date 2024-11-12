@@ -54,17 +54,13 @@ int main(int argc, char *argv[])
     QSharedPointer<AppCommunicator> ptrAppCommunicator(new AppCommunicator(ptrLuaScriptController));
     // app.installNativeEventFilter(ptrAppCommunicator.get());
 
+    // Delete any existing communication file at start
+    ptrAppCommunicator->deleteCommunicationFile();
+
     // Connect the QCoreApplication's aboutToQuit signal to delete the file when the app closes
     QObject::connect(&app, &QCoreApplication::aboutToQuit, [&]()
                      {
-                         if (QFile::remove(ptrAppCommunicator->getRunningFilePath()))
-                         {
-                             qDebug() << "Running file deleted successfully";
-                         }
-                         else
-                         {
-                             qWarning() << "Failed to delete running file";
-                         }
+                        ptrAppCommunicator->deleteRunningFile();
                      });
 
 #ifdef QT_NO_DEBUG

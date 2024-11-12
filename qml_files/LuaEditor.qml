@@ -86,18 +86,6 @@ LuaEditorQml
                 policy: ScrollBar.AlwaysOn;
             }
 
-            // MouseArea
-            // {
-            //     anchors.fill: parent;
-            //     propagateComposedEvents: true;
-
-            //     onClicked:
-            //     {
-            //         // Ensure luaEditor receives focus on click
-            //         luaEditor.forceActiveFocus();
-            //     }
-            // }
-
             // Synchronize scroll position
             function ensureVisible(r)
             {
@@ -333,6 +321,7 @@ LuaEditorQml
                             if (filePathName === root.model.filePathName)
                             {
                                 luaEditor.text = content;
+                                detailsArea.filePathName = root.model.filePathName;
                             }
                         }
                     }
@@ -349,10 +338,9 @@ LuaEditorQml
 
         DetailsArea
         {
+            id: detailsArea;
             Layout.fillWidth: true;
             Layout.preferredHeight: 110;
-
-            filePathName: root.model.filePathName;
         }
     }
 
