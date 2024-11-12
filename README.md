@@ -70,6 +70,15 @@ Clearing Errors: Send an empty error tag to clear all runtime errors:
 </Message>
 ```
 
+Since errors may occur from several scripts, the external application can create several xml files like:
+
+lua_script_data1312341234.xml
+lua_script_data6324523453.xml
+lua_script_data7324234454.xml
+
+Those file are all read subsequently and the data relayed to the corresponding lua script tab. Afterwards all files are deleted.
+So there is a directory tracking for xml files going on.
+
 ### Case 3: Back Communication
 NOWALuaScript can send commands back to the external application for tasks such as starting or stopping simulations:
 
