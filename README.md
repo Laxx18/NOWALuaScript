@@ -6,6 +6,8 @@ This document outlines the key features, installation, usage, and communication 
 ![Screenshot of Feature 1](https://github.com/Laxx18/NOWALuaScript/raw/main/Feature1.png)
 ![Screenshot of Feature 2](https://github.com/Laxx18/NOWALuaScript/raw/main/Feature2.png)
 
+[![NOWALuaScript Demo Video](https://img.youtube.com/vi/HYddkQEztzw/0.jpg)](https://youtu.be/HYddkQEztzw)
+
 ## Table of Contents
 - [Features](#features)
 - [Installation](#installation)
