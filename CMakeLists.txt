@@ -43,6 +43,7 @@ set(QML_FILES
     qml_files/Main.qml
     qml_files/MainMenu.qml
     qml_files/SearchDialog.qml
+    qml_files/AboutDialog.qml
     qml_files/IntelliSenseContextMenu.qml
     qml_files/MatchedFunctionContextMenu.qml
 )

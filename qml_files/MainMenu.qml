@@ -227,13 +227,6 @@ MenuBar
 
         Action
         {
-            text: qsTr("Run Script");
-            icon.name: "system-run";  // Common icon for "Run"
-            onTriggered: console.log("Run Lua script triggered");
-        }
-
-        Action
-        {
             text: qsTr("Open Lua Script Folder");
             shortcut: "Ctrl+L";
             icon.name: "folder-open";  // Common icon for opening folders
@@ -248,6 +241,15 @@ MenuBar
         }
     }
 
+
+    AboutDialog
+    {
+        id: aboutDialog;
+
+        x: (parent.width - width) / 2;
+        y: (parent.parent.height - height) / 2;
+    }
+
     Menu
     {
         title: qsTr("Help");
@@ -257,7 +259,10 @@ MenuBar
             text: qsTr("About");
             icon.name: "help-about";  // Common icon for "About"
 
-            onTriggered: console.log("About Lua script editor triggered")
+            onTriggered:
+            {
+                aboutDialog.open();
+            }
         }
     }
 }

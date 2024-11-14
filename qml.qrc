@@ -7,5 +7,6 @@
         <file>qml_files/SearchDialog.qml</file>
         <file>qml_files/IntelliSenseContextMenu.qml</file>
         <file>qml_files/MatchedFunctionContextMenu.qml</file>
+        <file>qml_files/AboutDialog.qml</file>
     </qresource>
 </RCC>
