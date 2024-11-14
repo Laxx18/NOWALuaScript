@@ -11,9 +11,6 @@ Rectangle
     height: 110;
     color: "white";
 
-    // border.color: "darkslategray";
-    // border.width: 2;
-
     property bool hasRuntimeError: false;
     property string filePathName: "";
 
