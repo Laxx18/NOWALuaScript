@@ -234,12 +234,14 @@ return {
 Also take a look at the NOWA_Api.lua file as orientation: https://github.com/Laxx18/NOWA-Engine/blob/main/bin/Release/NOWA_Api.lua
 
 **Note**: There are special cases in order to recognize getter.
-- Please use "get..." and "get...FromName("YourName")", so that the correct class can be matched. For example:
+- Please use 'get...' and 'get...FromName(string)', 'get...FromIndex(number)', so that the correct class can be matched. For example:
 
 ```lua
 physicsActiveComponent = scene1_barrel_0:getPhysicsActiveComponent():setDirection(...);
 
 scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromName("blub"):connect(...);
+
+scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromIndex(2):connect(...);
 ```
 In this example 'PhysicsActiveComponen' has been extracted and matched as class name, so calling ":" and a method will be recognized. The same is true for getCompositorEffectSharpenEdgesComponentFromName("blub"), which would be extracted to "CompositorEffectSharpenEdgesComponent", so that using ":", the intellisense will work.
 
