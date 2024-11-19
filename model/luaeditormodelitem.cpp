@@ -171,15 +171,23 @@ QString LuaEditorModelItem::extractWordBeforeColon(const QString& currentText, i
         wordBeforeColon = wordBeforeColon.mid(3);  // Remove the "get"
     }
 
-    // Remove any trailing parentheses (e.g., from function calls like "Controller()")
-    if (wordBeforeColon.endsWith("()"))
+    // Find the position of the first opening bracket '('
+    int bracketPos = wordBeforeColon.indexOf('(');
+    if (bracketPos != -1)
     {
-        wordBeforeColon.chop(2);  // Remove the last two characters "()"
+        // Remove everything from the first '(' to the closing ')'
+        wordBeforeColon = wordBeforeColon.left(bracketPos).trimmed();
+    }
+
+    if (wordBeforeColon.endsWith("FromName"))
+    {
+        wordBeforeColon = wordBeforeColon.left(wordBeforeColon.size() - 8);
     }
 
     return wordBeforeColon;
 }
 
+#if 0
 QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText, int cursorPos)
 {
     // Start from the cursor position and move backwards to find the last word before a colon
@@ -210,7 +218,40 @@ QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText,
 
     return methodBeforeColon;
 }
+#else
+QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText, int cursorPos)
+{
+    // Start from the cursor position and move backwards to find the last word before a colon
+    int startPos = cursorPos - 1;
 
+    // Iterate backwards from the cursor position until a delimiter is found
+    while (startPos >= 0)
+    {
+        QChar currentChar = currentText[startPos];
+
+        // Stop if a delimiter (":", "=", space, or line break) is found
+        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n')
+        {
+            break;
+        }
+
+        startPos--;
+    }
+
+    // Extract the word between the delimiter and the cursor position
+    QString methodBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1)).trimmed();
+
+    // Find the position of the first opening bracket '('
+    int bracketPos = methodBeforeColon.indexOf('(');
+    if (bracketPos != -1)
+    {
+        // Remove everything from the first '(' to the closing ')'
+        methodBeforeColon = methodBeforeColon.left(bracketPos).trimmed();
+    }
+
+    return methodBeforeColon;
+}
+#endif
 QString LuaEditorModelItem::extractClassBeforeDot(const QString& currentText, int cursorPosition)
 {
     // Extract the current line up to the cursor position
@@ -941,8 +982,11 @@ void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& textAfter
 
         this->matchMethodWorker->setParameters(this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
 
-        // Emit a request to process in the worker thread
-        Q_EMIT this->matchMethodWorker->signal_requestProcess();
+        if (!textAfterKeyword.endsWith('.') && !textAfterKeyword.endsWith(':'))
+        {
+            // Emit a request to process in the worker thread
+            Q_EMIT this->matchMethodWorker->signal_requestProcess();
+        }
     }
     else
     {

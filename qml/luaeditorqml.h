@@ -76,6 +76,8 @@ private:
 
     void resetTextAfterDot();
 
+    void processWithinFunction(QChar keyword);
+
     void processBracket(QChar keyword);
 private:
     LuaEditorModelItem* luaEditorModelItem;

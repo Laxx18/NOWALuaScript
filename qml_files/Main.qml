@@ -252,6 +252,7 @@ ApplicationWindow
         function onSignal_showIntelliSenseMenu(forConstant, x, y)
         {
             intelliSenseContextMenu.open(forConstant, x, y);
+            matchedFunctionContextMenu.close();
         }
 
         function onSignal_closeIntellisense()

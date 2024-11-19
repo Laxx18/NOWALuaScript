@@ -77,7 +77,7 @@ Rectangle
             if (!p.forConstant)
             {
                 selectedIdentifier = NOWAApiModel.methodsForSelectedClass[p.currentIndex];
-                if (selectedMethod.description)
+                if (selectedIdentifier.description)
                 {
                     content = "Details: " + selectedIdentifier.description + "\n" + selectedIdentifier.returns + " " + selectedIdentifier.name + selectedIdentifier.args;
                 }
@@ -89,7 +89,7 @@ Rectangle
             else
             {
                 selectedIdentifier = NOWAApiModel.constantsForSelectedClass[p.currentIndex];
-                if (selectedMethod.description)
+                if (selectedIdentifier.description)
                 {
                     content = "Details: Constant: " + selectedIdentifier.description + "\n" + selectedIdentifier.name;
                 }
