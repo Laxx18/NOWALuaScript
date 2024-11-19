@@ -233,18 +233,6 @@ return {
 
 Also take a look at the NOWA_Api.lua file as orientation: https://github.com/Laxx18/NOWA-Engine/blob/main/bin/Release/NOWA_Api.lua
 
-**Note**: There are special cases in order to recognize getter.
-- Please use 'get...' and 'get...FromName(string)', 'get...FromIndex(number)', so that the correct class can be matched. For example:
-
-```lua
-physicsActiveComponent = scene1_barrel_0:getPhysicsActiveComponent():setDirection(...);
-
-scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromName("blub"):connect(...);
-
-scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromIndex(2):connect(...);
-```
-In this example 'PhysicsActiveComponen' has been extracted and matched as class name, so calling ":" and a method will be recognized. The same is true for getCompositorEffectSharpenEdgesComponentFromName("blub"), which would be extracted to "CompositorEffectSharpenEdgesComponent", so that using ":", the intellisense will work.
-
 ## Instance Management
 To ensure only one instance of the application runs at a time, NOWALuaScript creates a NOWALuaScript.running file in the executable's bin directory when launched. This file will be deleted upon closing the application.
 
@@ -259,3 +247,15 @@ Scene1_barrel_0["onContactOnce"] = function(gameObject0, gameObject1, contact)
 end
 ```
 By following these practices, you can maximize the integration of NOWALuaScript with external applications and take full advantage of its powerful scripting and auto-completion features.
+
+There are special cases in order to recognize getter.
+- Please use 'get...' and 'get...FromName(string)', 'get...FromIndex(number)', so that the correct class can be matched. For example:
+
+```lua
+physicsActiveComponent = scene1_barrel_0:getPhysicsActiveComponent():setDirection(...);
+
+scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromName("blub"):connect(...);
+
+scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromIndex(2):connect(...);
+```
+In this example 'PhysicsActiveComponen' has been extracted and matched as class name, so calling ":" and a method will be recognized. The same is true for getCompositorEffectSharpenEdgesComponentFromName("blub"), which would be extracted to "CompositorEffectSharpenEdgesComponent", so that using ":", the intellisense will work.
