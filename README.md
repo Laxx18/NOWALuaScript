@@ -246,16 +246,10 @@ Scene1_barrel_0["onContactOnce"] = function(gameObject0, gameObject1, contact)
     contact = AppStateManager:getGameObjectController():castContact(contact)
 end
 ```
-By following these practices, you can maximize the integration of NOWALuaScript with external applications and take full advantage of its powerful scripting and auto-completion features.
-
-There are special cases in order to recognize getter.
-- Please use 'get...' and 'get...FromName(string)', 'get...FromIndex(number)', so that the correct class can be matched. For example:
+Please do not do such ugly things like using several commands in one line, as the code will become unreadable and the intellisense confused:
 
 ```lua
-physicsActiveComponent = scene1_barrel_0:getPhysicsActiveComponent():setDirection(...);
-
-scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromName("blub"):connect(...);
-
-scene1_barrel_0:getCompositorEffectSharpenEdgesComponentFromIndex(2):connect(...);
+scene1_barrel_0:getPhysicsActiveComponent():setDirection(0, 1); scene1_barrel_0:getReferenceComponentFromIndex(1):connect();
 ```
-In this example 'PhysicsActiveComponen' has been extracted and matched as class name, so calling ":" and a method will be recognized. The same is true for getCompositorEffectSharpenEdgesComponentFromName("blub"), which would be extracted to "CompositorEffectSharpenEdgesComponent", so that using ":", the intellisense will work.
+By following these practices, you can maximize the integration of NOWALuaScript with external applications and take full advantage of its powerful scripting and auto-completion features.
+
