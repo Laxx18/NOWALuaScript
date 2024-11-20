@@ -554,7 +554,6 @@ void LuaEditorQml::showIntelliSenseContextMenu(bool forConstant)
     }
 
     const auto& cursorGlobalPos = this->cursorAtPosition(modifiedText, cursorPos);
-
     Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, "", cursorPos, cursorGlobalPos.x(), cursorGlobalPos.y());
 }
 
@@ -566,9 +565,7 @@ void LuaEditorQml::showIntelliSenseContextMenuAtCursor(bool forConstant, const Q
         return;
     }
 
-    // TODO: Brauche hier cursor pos + was schon alles in der Zeile steht
     const auto& cursorGlobalPos = this->cursorAtPosition(this->currentText, this->cursorPosition);
-
     Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, textAfterColon, this->cursorPosition, cursorGlobalPos.x(), cursorGlobalPos.y());
 }
 
@@ -594,33 +591,30 @@ void LuaEditorQml::updateContentY(qreal contentY)
 
 QPointF LuaEditorQml::cursorAtPosition(const QString& currentText, int cursorPos)
 {
-    // Calculates the context menu position, according to the current cursor position
+    // Get the updated text and cursor position
+    QTextCursor textCursor = this->highlighter->getCursor();
+    textCursor.setPosition(cursorPos);
+
+    // Use QTextCursor to get line and character position
+    int line = textCursor.blockNumber();
+    int charPosInLine = textCursor.positionInBlock();
+
     QFont font = this->quickTextDocument->textDocument()->defaultFont();
     QFontMetrics fontMetrics(font);
 
-    // Calculate the line number and character position in the line
-    int line = currentText.left(cursorPos).count('\n');
-    int lineStartIndex = currentText.lastIndexOf('\n', cursorPos - 1) + 1;
-    int charPosInLine = cursorPos - lineStartIndex;
-
     // Calculate x position
-    qreal x = fontMetrics.horizontalAdvance(currentText.mid(lineStartIndex, charPosInLine)) + fontMetrics.ascent();
+    qreal x = fontMetrics.horizontalAdvance(textCursor.block().text().mid(0, charPosInLine)) + fontMetrics.ascent();
 
-    // Calculate y position using ascent
+    // Calculate y position
     qreal y = line * fontMetrics.height() + fontMetrics.ascent();
 
-    // Get the position of the text edit in the QML layout
     QPointF textEditPos = this->luaEditorTextEdit->mapToGlobal(QPointF(0, 0));
-
-    // Get the global window position
     QQuickWindow* window = this->luaEditorTextEdit->window();
     QPoint windowPos = window->mapToGlobal(QPoint(0, 0));
 
-    // Adjust y by adding the vertical position of the text editor (23: size of the caption in application window)
     qreal adjustedY = y - textEditPos.y() - this->scrollY + fontMetrics.height() + 23;
-
-    // Calculate the global cursor position
     QPointF cursorGlobalPos = textEditPos + QPointF(x - windowPos.x(), adjustedY - windowPos.y());
+
     return cursorGlobalPos;
 }
 

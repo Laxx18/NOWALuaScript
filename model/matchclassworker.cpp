@@ -67,7 +67,6 @@ void MatchClassWorker::process(void)
             else
             {
                 // Nothing matched, so maybe the dot is called for a function, not for a class. Handle that case
-
                 this->handleMethods();
 
                 matchedIdentifier = this->matchedClassName;
@@ -123,6 +122,7 @@ void MatchClassWorker::process(void)
             if (false ==  this->matchedClassName.isEmpty())
             {
                 ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY);
+                this->matchedClassName.clear();
             }
             return;
         }
