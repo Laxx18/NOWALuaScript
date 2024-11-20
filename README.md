@@ -246,4 +246,10 @@ Scene1_barrel_0["onContactOnce"] = function(gameObject0, gameObject1, contact)
     contact = AppStateManager:getGameObjectController():castContact(contact)
 end
 ```
+Please do not do such ugly things like using several commands in one line, as the code will become unreadable and the intellisense confused:
+
+```lua
+scene1_barrel_0:getPhysicsActiveComponent():setDirection(0, 1); scene1_barrel_0:getReferenceComponentFromIndex(1):connect();
+```
 By following these practices, you can maximize the integration of NOWALuaScript with external applications and take full advantage of its powerful scripting and auto-completion features.
+
