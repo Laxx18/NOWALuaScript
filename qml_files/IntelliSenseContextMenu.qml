@@ -41,11 +41,13 @@ Rectangle
             {
                 p.currentIndex = Math.min(p.currentIndex + 1, repeaterContent.count - 1);
                 keyHoverTimer.restart();
+                flickable.ensureVisible(p.currentIndex);
             }
             else if (key === Qt.Key_Up)
             {
                 p.currentIndex = Math.max(p.currentIndex - 1, 0);
                 keyHoverTimer.restart();
+                flickable.ensureVisible(p.currentIndex);
             }
             else if (key === Qt.Key_Tab && p.currentIndex >= 0)
             {
@@ -130,7 +132,7 @@ Rectangle
                     color: p.textColor;
                     text: "Class Name: " + NOWAApiModel.selectedClassName;
                     verticalAlignment: Text.AlignVCenter;
-                    width: root.width - 12;
+                    width: root.width - p.textMargin;
                     wrapMode: Text.NoWrap;
                 }
             }
@@ -139,7 +141,7 @@ Rectangle
         Rectangle
         {
             id: descriptionRect;
-            height: p.itemHeight * 2;
+            height: descriptionText.height + p.textMargin;
             width: root.width;
             color: p.backgroundColor;
             border.color: p.borderColor;
@@ -156,7 +158,7 @@ Rectangle
                     color: p.textColor;
                     text: "Description: " + NOWAApiModel.classDescription;
                     verticalAlignment: Text.AlignVCenter;
-                    width: root.width - 12;
+                    width: root.width - p.textMargin;
                     wrapMode: Text.Wrap;
                 }
             }
@@ -182,7 +184,7 @@ Rectangle
                     color: p.textColor;
                     text: "Inherits: " + NOWAApiModel.classInherits;
                     verticalAlignment: Text.AlignVCenter;
-                    width: root.width - 12;
+                    width: root.width - p.textMargin;
                     wrapMode: Text.NoWrap;
                 }
             }
@@ -208,7 +210,7 @@ Rectangle
                     color: p.textColor;
                     text: "Details: ";
                     verticalAlignment: Text.AlignVCenter;
-                    width: root.width - 12;
+                    width: root.width - p.textMargin;
                     wrapMode: Text.Wrap;
                 }
             }
@@ -227,10 +229,10 @@ Rectangle
         {
             id: flickable;
             width: root.width;
-            height: root.height - contentWrapper.height - 5 * p.itemHeight // Leave space for header
+            height: root.height - contentWrapper.height - 5 * p.itemHeight; // Leave space for header
             clip: true; // Clip content that exceeds the viewable area
-            contentWidth: contentWrapper.width
-            contentHeight: repeaterContent.height
+            contentWidth: contentWrapper.width;
+            contentHeight: repeaterContent.height;
 
             ScrollBar.vertical: ScrollBar
             {
@@ -253,7 +255,25 @@ Rectangle
                 hoverEnabled: true;
                 active: pressed || hovered;
                 policy: flickable.contentWidth > flickable.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff;
+            }
 
+            function ensureVisible(index)
+            {
+               var item = repeaterContent.itemAt(index);
+               if (!item)
+               {
+                   return;
+               }
+
+               // Ensure item is within visible bounds
+               if (item.y < flickable.contentY)
+               {
+                   flickable.contentY = item.y; // Scroll up
+               }
+               else if (item.y + item.height > flickable.contentY + flickable.height)
+               {
+                   flickable.contentY = item.y + item.height - flickable.height; // Scroll down
+               }
             }
 
             Column

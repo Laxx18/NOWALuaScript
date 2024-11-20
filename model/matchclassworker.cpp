@@ -119,8 +119,11 @@ void MatchClassWorker::process(void)
                 return; // Exit if stopping
             }
 
-            // Now you can trigger a method that opens the context menu in QML with the methods
-            ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY);
+            // Now trigger a method that opens the context menu in QML with the methods
+            if (false ==  this->matchedClassName.isEmpty())
+            {
+                ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY);
+            }
             return;
         }
         else
@@ -169,10 +172,24 @@ QString MatchClassWorker::handleMethods(void)
         return matchedMethodName; // Exit if stopping
     }
 
-    QString matchedPostIdentifier = this->luaEditorModelItem->extractWordBeforeColon(textBeforeCursor, this->cursorPosition);
+    QString matchedPostIdentifier;
     QString matchedPostMethodName = this->luaEditorModelItem->extractMethodBeforeColon(textBeforeCursor, this->cursorPosition);
 
     int lastNewlineIndex = textBeforeCursor.lastIndexOf('\n', this->cursorPosition - 1);
+
+    QString textUpToCursor = currentText.left(cursorPosition);
+
+    // Count the number of '\n' in the substring
+    int lineIndex = textUpToCursor.count('\n') + 1;
+
+    QString currentLine = currentText.left(cursorPosition).section('\n', -1).trimmed();
+    QRegularExpression firstWordRegex(R"((\w+):)");
+    QRegularExpressionMatch firstWordMatch = firstWordRegex.match(currentLine);
+
+    if (firstWordMatch.hasMatch())
+    {
+        matchedPostIdentifier = firstWordMatch.captured(1); // Extract the first word before the colon
+    }
 
     // Special case:
     // physicsActiveComponent:applyForce(Vector3.UNIT_Y * 200);
@@ -191,18 +208,30 @@ QString MatchClassWorker::handleMethods(void)
     matchedPostIdentifier.remove(trimmer);
     matchedPostMethodName.remove(trimmer);
 
-    // Check for empty matched class
-    if (matchedPostIdentifier.isEmpty())
+    if (true == matchedPostIdentifier.isEmpty())
     {
-        this->isProcessing = false; // Reset the flag before exiting
-        return matchedMethodName; // Exit if no matched class
+        matchedPostIdentifier = matchedCurrentIdentifier;
     }
 
     const auto& luaVariableInfo = this->luaEditorModelItem->getClassForVariableName(matchedPostIdentifier);
 
     if (!luaVariableInfo.type.isEmpty())
     {
-        this->matchedClassName = luaVariableInfo.type;
+        bool foundMatchedChainType = false;
+        for (size_t i = 0; i < luaVariableInfo.chainTypeList.size(); i++)
+        {
+            if (false == luaVariableInfo.chainTypeList[i].chainType.isEmpty() && luaVariableInfo.chainTypeList[i].line == lineIndex)
+            {
+                this->matchedClassName = luaVariableInfo.chainTypeList[i].chainType;
+                foundMatchedChainType = true;
+                break;
+            }
+        }
+
+        if (false == foundMatchedChainType)
+        {
+            this->matchedClassName = luaVariableInfo.type;
+        }
     }
     else if (true == ApiModel::instance()->isValidClassName(matchedPostIdentifier))
     {
@@ -239,6 +268,10 @@ QString MatchClassWorker::handleMethods(void)
             {
                 // Handling this case: otherGameObject:getAiFlockingComponent():getOwner(): -> to get GameObject which is the owner, determined by AiFlockingComponent and then the return type of the Method getOwner
                 resultClassName = ApiModel::instance()->getClassForMethodName(matchedPreIdentifier, matchedPostMethodName);
+                if ("void" == resultClassName || "string" == resultClassName || "number" == resultClassName || "boolean" == resultClassName)
+                {
+                    return "";
+                }
                 matchedMethodName = matchedPostMethodName;
             }
             else if (false == ApiModel::instance()->isValidMethodName(matchedPreIdentifier, matchedMethodName))

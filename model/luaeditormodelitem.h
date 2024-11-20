@@ -18,13 +18,23 @@ public:
 
     Q_PROPERTY(QString title READ getTitle NOTIFY titleChanged)
 public:
+    struct ChainTypeInfo
+    {
+        int line = -1;
+        QString chainType; // The chain type (initially empty, filled when type can be determined), e.g. scene1_barrel_0:getPhysicsActiveComponent() -> chainType -> PhysicsActiveComponent
+    };
+
     struct LuaVariableInfo
     {
         QString name;   // Variable name
         QString type;   // Inferred type (initially empty, filled when type can be determined)
         int line = -1;       // Line number where the variable is declared
         QString scope;  // Scope (e.g., global, local)
+        QVector<ChainTypeInfo> chainTypeList;
     };
+
+
+
 public:
     explicit LuaEditorModelItem(QObject* parent = Q_NULLPTR);
 
@@ -117,12 +127,13 @@ private:
 
     void handleMethodChainAssignment(const QString& statement, int lineNumber);
 
-    void handleMethodChainAssignmentAssignment(const QString& statement, int lineNumber);
+    QString resolveMethodChainType(const QString& objectVar);
+
+    void handleMethodChain(const QString& statement, int lineNumber);
 
     void handleLoop(const QString& statement, int lineNumber, const QStringList& lines);
 
-    // Helper function to resolve types for method chains
-    QString resolveMethodChainType(const QString& objectVar);
+    bool isCommentOnlyLine(const QString& line);
 private:
     QString filePathName;
     QString content;

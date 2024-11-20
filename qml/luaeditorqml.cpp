@@ -566,6 +566,7 @@ void LuaEditorQml::showIntelliSenseContextMenuAtCursor(bool forConstant, const Q
         return;
     }
 
+    // TODO: Brauche hier cursor pos + was schon alles in der Zeile steht
     const auto& cursorGlobalPos = this->cursorAtPosition(this->currentText, this->cursorPosition);
 
     Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, textAfterColon, this->cursorPosition, cursorGlobalPos.x(), cursorGlobalPos.y());

@@ -179,46 +179,18 @@ QString LuaEditorModelItem::extractWordBeforeColon(const QString& currentText, i
         wordBeforeColon = wordBeforeColon.left(bracketPos).trimmed();
     }
 
-    if (wordBeforeColon.endsWith("FromName"))
-    {
-        wordBeforeColon = wordBeforeColon.left(wordBeforeColon.size() - 8);
-    }
+    // if (wordBeforeColon.endsWith("FromName"))
+    // {
+    //     wordBeforeColon = wordBeforeColon.left(wordBeforeColon.size() - 8);
+    // }
+    // else if (wordBeforeColon.endsWith("FromIndex"))
+    // {
+    //     wordBeforeColon = wordBeforeColon.left(wordBeforeColon.size() - 9);
+    // }
 
     return wordBeforeColon;
 }
 
-#if 0
-QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText, int cursorPos)
-{
-    // Start from the cursor position and move backwards to find the last word before a colon
-    int startPos = cursorPos - 1;
-
-    // Iterate backwards from the cursor position until a delimiter is found
-    while (startPos >= 0)
-    {
-        QChar currentChar = currentText[startPos];
-
-        // Stop if a delimiter (":", "=", space, or line break) is found
-        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n')
-        {
-            break;
-        }
-
-        startPos--;
-    }
-
-    // Extract the word between the delimiter and the cursor position
-    QString methodBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1)).trimmed();
-
-    // Remove any trailing parentheses (e.g., from function calls like "Controller()")
-    if (methodBeforeColon.endsWith("()"))
-    {
-        methodBeforeColon.chop(2);  // Remove the last two characters "()"
-    }
-
-    return methodBeforeColon;
-}
-#else
 QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText, int cursorPos)
 {
     // Start from the cursor position and move backwards to find the last word before a colon
@@ -251,7 +223,7 @@ QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText,
 
     return methodBeforeColon;
 }
-#endif
+
 QString LuaEditorModelItem::extractClassBeforeDot(const QString& currentText, int cursorPosition)
 {
     // Extract the current line up to the cursor position
@@ -303,6 +275,10 @@ void LuaEditorModelItem::detectVariables(void)
             {
                 continue;
             }
+            if (true == this->isCommentOnlyLine(line))
+            {
+                continue;
+            }
 
             // Split the line into multiple statements using semicolon ";"
             QStringList statements = line.split(';', Qt::SkipEmptyParts);
@@ -311,13 +287,13 @@ void LuaEditorModelItem::detectVariables(void)
             for (const QString& statement : statements)
             {
                 // Handle method chain assignments
-                handleTableAccess(statement, i + 1);
                 handleCastAssignment(statement, i + 1);
                 handleMethodCallAssignment(statement, i + 1);
                 handleSimpleAssignment(statement, i + 1);
                 handleMethodChainAssignment(statement, i + 1);
-                handleMethodChainAssignmentAssignment(statement, i + 1);
+                handleMethodChain(statement, i + 1);
 
+                handleTableAccess(statement, i + 1);
                 // Handle for and while loops
                 handleLoop(statement, i + 1, lines);
             }
@@ -355,7 +331,7 @@ void LuaEditorModelItem::detectLocalVariables(const QString& line, int lineNumbe
     if (match.hasMatch())
     {
         QString varName = match.captured(1);
-        this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber + 1, "local"};
+        this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber, "local"};
     }
 }
 
@@ -368,7 +344,7 @@ void LuaEditorModelItem::detectGlobalVariables(const QString& line, int lineNumb
     if (match.hasMatch() && !line.startsWith("local"))
     {
         QString varName = match.captured(1);
-        this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber + 1, "global"};
+        this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber, "global"};
     }
 }
 
@@ -407,7 +383,7 @@ void LuaEditorModelItem::handleTableAccess(const QString& statement, int lineNum
                 {
                     // Assign the extracted type based on the index
                     QString subtype = subTypes[index];
-                    this->variableMap[leftVar] = LuaVariableInfo{leftVar, subtype, lineNumber + 1, "local"};
+                    this->variableMap[leftVar] = LuaVariableInfo{leftVar, subtype, lineNumber, "local"};
                 }
             }
         }
@@ -455,7 +431,7 @@ void LuaEditorModelItem::handleCastAssignment(const QString& statement, int line
         if (!varName.isEmpty() && !className.isEmpty())
         {
             // Assign the detected class name as the type for the variable
-            this->variableMap[varName] = LuaVariableInfo{varName, className, lineNumber + 1, this->variableMap[varName].scope};
+            this->variableMap[varName] = LuaVariableInfo{varName, className, lineNumber, this->variableMap[varName].scope};
         }
     }
 }
@@ -497,7 +473,7 @@ void LuaEditorModelItem::handleMethodCallAssignment(const QString& statement, in
                     // Assign the return type to the leftVar
                     if (!returnType.isEmpty())
                     {
-                        this->variableMap[leftVar] = LuaVariableInfo{leftVar, returnType, lineNumber + 1, this->variableMap[leftVar].scope};
+                        this->variableMap[leftVar] = LuaVariableInfo{leftVar, returnType, lineNumber, this->variableMap[leftVar].scope};
                         break;
                     }
 
@@ -527,21 +503,140 @@ void LuaEditorModelItem::handleSimpleAssignment(const QString& statement, int li
 
             if (!rightVarType.isEmpty())
             {
-                this->variableMap[leftVar] = LuaVariableInfo{leftVar, rightVarType, lineNumber + 1, this->variableMap[leftVar].scope};
+                this->variableMap[leftVar] = LuaVariableInfo{leftVar, rightVarType, lineNumber, this->variableMap[leftVar].scope};
             }
         }
     }
 }
 
-void LuaEditorModelItem::handleMethodChainAssignmentAssignment(const QString& statement, int lineNumber)
+bool LuaEditorModelItem::isCommentOnlyLine(const QString& line)
+{
+    // Regular expression to match lines starting with optional spaces followed by "--"
+    QRegularExpression commentOnlyRegex(R"(^\s*--)");
+    return commentOnlyRegex.match(line).hasMatch();
+}
+
+void LuaEditorModelItem::handleMethodChainAssignment(const QString& statement, int lineNumber)
+{
+    // QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+))");
+    // Handle method chain assignment (e.g., variable = object:method1():method2())
+    // Or even:
+    // Handle method chain assignment (e.g., variable = object:method1():method2().x)
+    QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+(?:\.\w+)?))");
+    QRegularExpressionMatch match = assignmentChainRegex.match(statement);
+    if (match.hasMatch())
+    {
+        QString assignedVar = match.captured(1);  // Variable on the left-hand side
+        QString objectVar = match.captured(2);    // Object with method chain on the right-hand side
+
+        // Resolve the type of the object variable through method chain
+        QString resolvedType = resolveMethodChainType(objectVar);
+        if (!resolvedType.isEmpty())
+        {
+            this->variableMap[assignedVar] = LuaVariableInfo{assignedVar, resolvedType, lineNumber + 1, this->variableMap[assignedVar].scope};
+            // continue;
+            return;
+        }
+    }
+}
+
+QString LuaEditorModelItem::resolveMethodChainType(const QString& objectVar)
+{
+    // Split object:method chain by ":" and then handle any dot properties
+    QStringList parts = objectVar.split(QRegularExpression("(:|\\.)"), Qt::SkipEmptyParts);
+
+    if (parts.isEmpty())
+    {
+        return "";
+    }
+
+    QString baseVar = parts.first();  // Base variable
+    QString currentType = this->variableMap.contains(baseVar) ? this->variableMap[baseVar].type : "";
+
+    if (currentType.isEmpty())
+    {
+        return "";  // No known type for the base variable
+    }
+
+    for (int i = 1; i < parts.size(); ++i)
+    {
+        QString part = parts[i];
+
+        // If the part is a method (ends with parentheses), resolve its return type
+        if (part.endsWith("()"))
+        {
+            QString methodName = part.left(part.size() - 2);  // Remove "()" from method name
+
+            // Get methods available for the current type
+            ApiModel::instance()->setSelectedClassName(currentType);
+            QVariantList methods = ApiModel::instance()->getMethodsForSelectedClass();
+
+            bool methodFound = false;
+            for (const QVariant& methodVariant : methods)
+            {
+                QVariantMap methodMap = methodVariant.toMap();
+                if (methodMap["name"].toString() == methodName)
+                {
+                    currentType = methodMap["returns"].toString().remove('(').remove(')');
+                    methodFound = true;
+                    break;
+                }
+            }
+
+            if (!methodFound)
+            {
+                return "";  // If method not found, stop processing
+            }
+        }
+        else
+        {
+            // No property handling, just set type to 'value', so no further recognition
+            currentType = "value";
+            return currentType;
+#if 0 \
+    // If it's a property (dot notation without parentheses), assume it's part of the type structure
+            ApiModel::instance()->setSelectedClassName(currentType);
+            QVariantList properties = ApiModel::instance()->getPropertiesForSelectedClass();
+
+            bool propertyFound = false;
+            for (const QVariant& propertyVariant : properties)
+            {
+                QVariantMap propertyMap = propertyVariant.toMap();
+                if (propertyMap["name"].toString() == part)
+                {
+                    currentType = propertyMap["type"].toString();
+                    propertyFound = true;
+                    break;
+                }
+            }
+
+            if (!propertyFound)
+            {
+                return "";  // Stop if property is not found
+            }
+#endif
+        }
+    }
+
+    return currentType;  // Return the resolved type of the last property or method
+}
+
+
+void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNumber)
 {
     // Handle chain of methods: e.g.
     // local main = AppStateManager:getController():getFromId(MAIN__ID);
     // So first determine the AppStateManager -> which is a class and getController is its method. So the "returns" would deliver "Controller".
     // So this is the new class to look further for its method via ":". So its method would be: "getFromId", which its "returns" would deliver "".
     // And since this is the last part in the statement, the "main" could be added to the variable map as type "".
-    QRegularExpression chainAssignmentRegex(R"(\s*(\w+)\s*=\s*(.+))");
-    QRegularExpressionMatch match = chainAssignmentRegex.match(statement);
+    // QRegularExpression chainAssignmentRegex(R"(\s*(\w+)\s*=\s*(.+))");
+    // QRegularExpression assignmentOrMethodChainRegex(
+      //   R"((?:(\w+)\s*=\s*)?(\w+(:\w+\(\))+(?:\.\w+)?))");
+
+    QRegularExpression assignmentOrMethodChainRegex(
+        R"((?:(\w+)\s*=\s*)?(\w+(:\w+\((?:[^()]*|'[^']*'|"[^"]*")\))+(?:\.\w+)?))");
+
+    QRegularExpressionMatch match = assignmentOrMethodChainRegex.match(statement);
     if (match.hasMatch())
     {
         QString variableName = match.captured(1);  // e.g., "main"
@@ -599,45 +694,45 @@ void LuaEditorModelItem::handleMethodChainAssignmentAssignment(const QString& st
                     if (false == this->variableMap[variableName].type.isEmpty())
                     {
                         alreadyExisting = true;
-                        // continue;
                     }
                 }
                 if (false == alreadyExisting)
                 {
                     LuaVariableInfo varInfo;
-                    varInfo.name = variableName;
-                    varInfo.type = currentType;
-                    varInfo.line = lineNumber + 1;
-                    varInfo.scope = this->variableMap[variableName].scope;
-                    this->variableMap[variableName] = varInfo;
-                    qDebug() << "Added variable" << variableName << "with type" << currentType << "to variableMap";
-                    // continue;
+
+                    bool hasChainType = false;
+                    ChainTypeInfo chainTypeInfo;
+                    if (true == variableName.isEmpty())
+                    {
+                        variableName = baseClassOrVar;
+                        chainTypeInfo.line = lineNumber;
+                        chainTypeInfo.chainType = currentType;
+
+                        varInfo.chainTypeList.append(chainTypeInfo);
+                        hasChainType = true;
+                    }
+
+                    if (!this->variableMap.contains(variableName))
+                    {
+                        varInfo.name = variableName;
+                        if (false == hasChainType)
+                        {
+                            varInfo.type = currentType;
+                        }
+                        varInfo.line = lineNumber;
+                        varInfo.scope = this->variableMap[variableName].scope;
+                        this->variableMap[variableName] = varInfo;
+                        qDebug() << "Added variable" << variableName << "with type" << currentType << "to variableMap";
+                    }
+                    else
+                    {
+                        if (true == hasChainType)
+                        {
+                            this->variableMap[variableName].chainTypeList.append(chainTypeInfo);
+                        }
+                    }
                 }
             }
-        }
-    }
-}
-
-void LuaEditorModelItem::handleMethodChainAssignment(const QString& statement, int lineNumber)
-{
-    // QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+))");
-    // Handle method chain assignment (e.g., variable = object:method1():method2())
-    // Or even:
-    // Handle method chain assignment (e.g., variable = object:method1():method2().x)
-    QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+(?:\.\w+)?))");
-    QRegularExpressionMatch match = assignmentChainRegex.match(statement);
-    if (match.hasMatch())
-    {
-        QString assignedVar = match.captured(1);  // Variable on the left-hand side
-        QString objectVar = match.captured(2);    // Object with method chain on the right-hand side
-
-        // Resolve the type of the object variable through method chain
-        QString resolvedType = resolveMethodChainType(objectVar);
-        if (!resolvedType.isEmpty())
-        {
-            this->variableMap[assignedVar] = LuaVariableInfo{assignedVar, resolvedType, lineNumber + 1, this->variableMap[assignedVar].scope};
-            // continue;
-            return;
         }
     }
 }
@@ -654,7 +749,7 @@ void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, co
         QString arrayVarName = match.captured(2);  // e.g., "nodes"
 
         // Assign "number" type to loop variable
-        this->variableMap[loopVarName] = LuaVariableInfo{loopVarName, "number", lineNumber + 1, "local"};
+        this->variableMap[loopVarName] = LuaVariableInfo{loopVarName, "number", lineNumber, "local"};
 
         // Check if arrayVarName is a known table
         if (this->variableMap.contains(arrayVarName))
@@ -669,7 +764,7 @@ void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, co
                 QString indexedAccessRegex = QString(R"(%1\[%2\])").arg(arrayVarName, loopVarName);
                 QRegularExpression indexedAccess(indexedAccessRegex);
 
-                for (int j = lineNumber + 1; j < lines.size(); ++j)
+                for (int j = lineNumber; j < lines.size(); ++j)
                 {
                     QString line = lines[j].trimmed();
 
@@ -718,7 +813,7 @@ void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, co
                     QString indexedAccessRegex = QString(R"(%1\[%2\])").arg(arrayVarName, loopVarName);
                     QRegularExpression indexedAccess(indexedAccessRegex);
 
-                    for (int j = lineNumber + 1; j < lines.size(); ++j)
+                    for (int j = lineNumber; j < lines.size(); ++j)
                     {
                         QString line = lines[j].trimmed();
 
@@ -748,154 +843,6 @@ void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, co
         }
     }
 }
-
-#if 0
-QString LuaEditorModelItem::resolveMethodChainType(const QString& objectVar)
-{
-    // Split object:method chain by ":" but also handle chains that are broken by spaces
-    QStringList parts = objectVar.split(QRegularExpression(":|\\s"), Qt::SkipEmptyParts);
-
-    if (parts.size() < 2)
-    {
-        return "";
-    }
-
-    QString baseVar = parts.first();  // The base variable before any ":"
-    QString currentType = this->variableMap.contains(baseVar) ? this->variableMap[baseVar].type : "";
-
-    if (currentType.isEmpty())
-    {
-        return "";  // No known type for the base variable
-    }
-
-    // Iterate through each method in the chain until a space is encountered
-    for (int i = 1; i < parts.size(); ++i)
-    {
-        QString part = parts[i];
-
-        // Stop if we encounter a space (indicating a new chain starts)
-        if (part.contains(' '))
-        {
-            break;
-        }
-
-        QString methodName = part;
-
-        // Remove parentheses "()" from the method name if present
-        if (methodName.endsWith("()"))
-        {
-            methodName = methodName.mid(0, methodName.size() - 2);
-        }
-
-        // Now get the methods available for the current type
-        ApiModel::instance()->setSelectedClassName(currentType);
-        QVariantList methods = ApiModel::instance()->getMethodsForSelectedClass();
-
-        bool methodFound = false;
-
-        for (const QVariant& methodVariant : methods)
-        {
-            QVariantMap methodMap = methodVariant.toMap();
-            if (methodMap["name"].toString() == methodName)
-            {
-                // Method found, update the type for the next method in the chain
-                currentType = methodMap["returns"].toString().remove('(').remove(')');
-                methodFound = true;
-                break;
-            }
-        }
-
-        if (!methodFound)
-        {
-            return "";  // If a method in the chain is not found, stop the resolution
-        }
-    }
-
-    return currentType;  // The resolved type of the last method in the chain
-}
-#else
-QString LuaEditorModelItem::resolveMethodChainType(const QString& objectVar)
-{
-    // Split object:method chain by ":" and then handle any dot properties
-    QStringList parts = objectVar.split(QRegularExpression("(:|\\.)"), Qt::SkipEmptyParts);
-
-    if (parts.isEmpty())
-    {
-        return "";
-    }
-
-    QString baseVar = parts.first();  // Base variable
-    QString currentType = this->variableMap.contains(baseVar) ? this->variableMap[baseVar].type : "";
-
-    if (currentType.isEmpty())
-    {
-        return "";  // No known type for the base variable
-    }
-
-    for (int i = 1; i < parts.size(); ++i)
-    {
-        QString part = parts[i];
-
-        // If the part is a method (ends with parentheses), resolve its return type
-        if (part.endsWith("()"))
-        {
-            QString methodName = part.left(part.size() - 2);  // Remove "()" from method name
-
-            // Get methods available for the current type
-            ApiModel::instance()->setSelectedClassName(currentType);
-            QVariantList methods = ApiModel::instance()->getMethodsForSelectedClass();
-
-            bool methodFound = false;
-            for (const QVariant& methodVariant : methods)
-            {
-                QVariantMap methodMap = methodVariant.toMap();
-                if (methodMap["name"].toString() == methodName)
-                {
-                    currentType = methodMap["returns"].toString().remove('(').remove(')');
-                    methodFound = true;
-                    break;
-                }
-            }
-
-            if (!methodFound)
-            {
-                return "";  // If method not found, stop processing
-            }
-        }
-        else
-        {
-            // No property handling, just set type to 'value', so no further recognition
-            currentType = "value";
-            return currentType;
-#if 0
-            // If it's a property (dot notation without parentheses), assume it's part of the type structure
-            ApiModel::instance()->setSelectedClassName(currentType);
-            QVariantList properties = ApiModel::instance()->getPropertiesForSelectedClass();
-
-            bool propertyFound = false;
-            for (const QVariant& propertyVariant : properties)
-            {
-                QVariantMap propertyMap = propertyVariant.toMap();
-                if (propertyMap["name"].toString() == part)
-                {
-                    currentType = propertyMap["type"].toString();
-                    propertyFound = true;
-                    break;
-                }
-            }
-
-            if (!propertyFound)
-            {
-                return "";  // Stop if property is not found
-            }
-#endif
-        }
-    }
-
-    return currentType;  // Return the resolved type of the last property or method
-}
-
-#endif
 
 LuaEditorModelItem::LuaVariableInfo LuaEditorModelItem::getClassForVariableName(const QString& variableName)
 {
