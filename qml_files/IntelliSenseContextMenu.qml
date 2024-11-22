@@ -13,7 +13,12 @@ Rectangle
     color: "white";
     visible: false;
     width: 400; // Set a fixed width for the menu
-    height: 400; // classNameRect.height + descriptionRect.height + inheritsRect.height + detailsArea.height + contentWrapper.height;
+    height: classNameRect.height + descriptionRect.height + inheritsRect.height + detailsArea.height + flickable.height;
+
+    onHeightChanged:
+    {
+        console.log("newHeight: " + height);
+    }
 
     QtObject
     {
@@ -101,14 +106,13 @@ Rectangle
                 }
             }
 
-
-
             details.text = content;
         }
     }
 
     Column
     {
+        id: container;
         anchors.fill: parent
 
         // Header section - fixed items
@@ -222,14 +226,14 @@ Rectangle
             width: root.width;
             height: 2;
             color: "white";
-            opacity: 0.5;
         }
 
         Flickable
         {
             id: flickable;
             width: root.width;
-            height: root.height - contentWrapper.height - 5 * p.itemHeight; // Leave space for header
+            // height: contentWrapper.height + 7 * p.itemHeight;
+            height: Math.min(repeaterContent.count, 7) * p.itemHeight;
             clip: true; // Clip content that exceeds the viewable area
             contentWidth: contentWrapper.width;
             contentHeight: repeaterContent.height;
@@ -442,21 +446,25 @@ Rectangle
 
         calculateMaxWidth();
 
-        let pHeight = parent.height;
-        let rHeight = root.height;
-        // Parent is the main application
-        const availableSpaceBelow = pHeight - y;
-        if (availableSpaceBelow < rHeight)
+        let pHeight = parent.height; // Total height of the parent
+        let rHeight = root.height;  // Height of the menu itself
+        let availableSpaceBelow = pHeight - y; // Space below the cursor's y position
+
+        // Adjust logic to prioritize showing above when close to bottom
+        if (availableSpaceBelow < rHeight || availableSpaceBelow < 1.5 * rHeight)
         {
-            root.y = y - rHeight - 100; // Position above
+            // Show above if not enough space below or if close to bottom
+            root.y = Math.max(0, y - rHeight) - 30;
         }
         else
         {
-            root.y = y; // Position below
+            // Otherwise, show below
+            root.y = y;
         }
 
-        let pY = root.y;
-        root.x = Math.min(x, parent.width - root.width); // Ensure it stays within width
+        // Ensure the menu stays within the parent's width
+        root.x = Math.min(x, parent.width - root.width);
+
         root.visible = true;
 
         NOWAApiModel.isIntellisenseShown = true;

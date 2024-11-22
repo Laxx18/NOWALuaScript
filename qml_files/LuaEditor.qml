@@ -19,15 +19,6 @@ LuaEditorQml
         console.debug("----> LuaEditorQml LOADED");
     }
 
-    // Hugh performance impact and cursor is visible just after a while on a large file
-    // onVisibleChanged:
-    // {
-    //     if (visible)
-    //     {
-    //         luaEditor.forceActiveFocus();
-    //     }
-    // }
-
     property string textColor: "black";
 
     property int leftPadding: 4;
@@ -181,6 +172,8 @@ LuaEditorQml
                     selectedTextColor: "black";
                     selectionColor: "lightgreen";
 
+                    property bool controlHeld: false
+
                     Keys.onPressed: (event) =>
                     {
                         // If context menu is shown, relay those key to the context menu for navigation
@@ -205,6 +198,10 @@ LuaEditorQml
                             event.accepted = true;
                             NOWALuaEditorModel.breakLine();
                         }
+                        else if (event.key === Qt.Key_Control)
+                        {
+                            luaEditor.controlHeld = true;
+                        }
                         else if (event.key === Qt.Key_Z && (event.modifiers & Qt.ControlModifier))
                         {
                             event.accepted = true; // Prevent text edit undo
@@ -218,6 +215,14 @@ LuaEditorQml
                         else
                         {
                             root.handleKeywordPressed(event.text);
+                        }
+                    }
+
+                    Keys.onReleased: (event) =>
+                    {
+                        if (event.key === Qt.Key_Control)
+                        {
+                            luaEditor.controlHeld = false;
                         }
                     }
 
@@ -245,7 +250,9 @@ LuaEditorQml
                     }
 
                     // Track changes in selected text
-                        onSelectedTextChanged:
+                    onSelectedTextChanged:
+                    {
+                        if (luaEditor.controlHeld)
                         {
                             if (luaEditor.selectedText.length > 0)
                             {
@@ -258,24 +265,11 @@ LuaEditorQml
                                 root.clearHighlightWordUnderCursor();
                             }
                         }
+                        else
+                        {
 
-                    // Add MouseArea to track the mouse position
-                    // MouseArea
-                    // {
-                    //     id: mouseTracker;
-                    //     anchors.fill: parent;
-                    //     hoverEnabled: true;
-                    //     acceptedButtons: Qt.NoButton  // This allows text interaction to pass through
-
-                    //     property real mouseX: 0;
-                    //     property real mouseY: 0;
-
-                    //     onPositionChanged: (mouse) =>
-                    //     {
-                    //         mouseX = mouse.x;
-                    //         mouseY = mouse.y;
-                    //     }
-                    // }
+                        }
+                    }
 
                     Connections
                     {
@@ -328,6 +322,7 @@ LuaEditorQml
                 }
             }
         }
+
 
         Rectangle
         {

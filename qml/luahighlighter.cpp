@@ -383,6 +383,9 @@ void LuaHighlighter::setCursorPosition(int cursorPosition)
         return;
     }
 
+    QTextBlock block = cursor.block(); // Get the block where the cursor is
+    this->rehighlightBlock(block);  // Reapply syntax highlighting
+#if 0
     QChar currentChar = text.at(cursorPos);
 
     // Performance optimization
@@ -390,6 +393,7 @@ void LuaHighlighter::setCursorPosition(int cursorPosition)
     {
         this->rehighlight();  // Reapply syntax highlighting
     }
+#endif
 }
 
 void LuaHighlighter::addTabToSelection()
@@ -557,13 +561,13 @@ void LuaHighlighter::replaceInBlock(int searchStart)
 
 void LuaHighlighter::highlightBlock(const QString& text)
 {
-    // Apply highlighting rules first
-    foreach (const HighlightingRule &rule, this->highlightingRules)
+    // Apply highlighting rules
+    for (const HighlightingRule& rule : std::as_const(this->highlightingRules))
     {
-        QRegularExpressionMatchIterator matchIterator = rule.pattern.globalMatch(text);
+        QRegularExpressionMatchIterator matchIterator = rule.pattern.globalMatch(text, QRegularExpression::NormalMatch);
         while (matchIterator.hasNext())
         {
-            QRegularExpressionMatch match = matchIterator.next();
+            const QRegularExpressionMatch match = matchIterator.next();
             setFormat(match.capturedStart(), match.capturedLength(), rule.format);
         }
     }

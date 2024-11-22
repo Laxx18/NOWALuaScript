@@ -74,6 +74,8 @@ public:
 
     LuaVariableInfo getClassForVariableName(const QString& variableName);
 
+    void resetMatchedClass(void);
+
 public slots:
     void startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
 
@@ -119,6 +121,8 @@ private:
 
     void handleTableAccess(const QString& statement, int lineNumber);
 
+    void handleTableTypes(const QString& variableName, const QString& statement, int lineNumber);
+
     void handleCastAssignment(const QString& statement, int lineNumber);
 
     void handleMethodCallAssignment(const QString& statement, int lineNumber);
@@ -150,6 +154,7 @@ private:
     QThread* matchMethodThread;
 
     QString matchedClassName;
+    bool printToConsole;
 };
 
 #endif // LUAEDITORMODELITEM_H

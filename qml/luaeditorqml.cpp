@@ -223,6 +223,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
         this->resetTextAfterColon();
         this->resetTextAfterDot();
         this->isInMatchedFunctionProcessing = false;
+        this->luaEditorModelItem->resetMatchedClass();
     }
 
     this->processWithinFunction(keyword);
@@ -314,12 +315,17 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
         Q_EMIT requestCloseIntellisense();
     }
 
+    bool corruptAfterColon = false;
+
     // Check if we're typing after a colon and sequentially
     if (true == this->isAfterColon)
     {
         if (false == this->isInMatchedFunctionProcessing && (this->cursorPosition != this->oldCursorPosition + 1 || keyword == ' ' || keyword == '\n' || keyword == ':' || keyword == '.'))
         {
             this->resetTextAfterColon();
+            this->requestCloseMatchedFunctionContextMenu();
+            corruptAfterColon = true;
+            this->luaEditorModelItem->resetMatchedClass();
         }
         else
         {
@@ -356,6 +362,8 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
         if (false == this->isInMatchedFunctionProcessing && (this->cursorPosition != this->oldCursorPosition + 1 || keyword == ' ' || keyword == '\n' || keyword == ':' || keyword == '.'))
         {
             this->resetTextAfterDot();
+            this->requestCloseIntellisense();
+            this->luaEditorModelItem->resetMatchedClass();
         }
         else
         {
@@ -391,7 +399,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
     }
 
     // Detect new colon and update lastColonIndex
-    if (keyword == ':')
+    if (keyword == ':' && false == corruptAfterColon)
     {
         this->isAfterColon = true;
         this->typedAfterColon.clear();

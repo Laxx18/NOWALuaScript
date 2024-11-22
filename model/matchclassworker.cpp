@@ -121,8 +121,7 @@ void MatchClassWorker::process(void)
             // Now trigger a method that opens the context menu in QML with the methods
             if (false ==  this->matchedClassName.isEmpty())
             {
-                ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY);
-                this->matchedClassName.clear();
+                ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY); 
             }
             return;
         }
