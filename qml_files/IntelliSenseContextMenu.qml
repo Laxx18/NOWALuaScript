@@ -192,7 +192,7 @@ Rectangle
         Rectangle
         {
             id: detailsArea;
-            height: Math.max(details.height, 100);
+            height: Math.max(details.height + 10, 100);
             width: root.width;
             color: p.backgroundColor;
             border.color: p.borderColor;
