@@ -15,11 +15,6 @@ Rectangle
     width: 400; // Set a fixed width for the menu
     height: classNameRect.height + descriptionRect.height + inheritsRect.height + detailsArea.height + flickable.height;
 
-    onHeightChanged:
-    {
-        console.log("newHeight: " + height);
-    }
-
     QtObject
     {
         id: p;
@@ -225,7 +220,7 @@ Rectangle
         {
             width: root.width;
             height: 2;
-            color: "white";
+            color: "darkgrey";
         }
 
         Flickable

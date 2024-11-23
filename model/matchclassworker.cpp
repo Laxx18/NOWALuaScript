@@ -4,7 +4,7 @@
 
 #include <QRegularExpression>
 
-MatchClassWorker::MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool forConstant, const QString& currentText,  const QString& textAfterKeyword, int cursorPosition, int mouseX, int mouseY)
+MatchClassWorker::MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool forConstant, const QString& currentText,  const QString& textAfterKeyword, int cursorPosition, int mouseX, int mouseY, bool forMatchedFunctionMenu)
     : luaEditorModelItem(luaEditorModelItem),
     currentText(currentText),
     forConstant(forConstant),
@@ -12,13 +12,14 @@ MatchClassWorker::MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool 
     cursorPosition(cursorPosition),
     mouseX(mouseX),
     mouseY(mouseY),
+    forMatchedFunctionMenu(forMatchedFunctionMenu),
     isProcessing(false),
     isStopped(true)
 {
 
 }
 
-void MatchClassWorker::setParameters(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
+void MatchClassWorker::setParameters(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu)
 {
     this->forConstant = forConstant;
     this->currentText = currentText;
@@ -26,6 +27,7 @@ void MatchClassWorker::setParameters(bool forConstant, const QString& currentTex
     this->cursorPosition = cursorPos;
     this->mouseX = mouseX;
     this->mouseY = mouseY;
+    this->forMatchedFunctionMenu = forMatchedFunctionMenu;
 }
 
 void MatchClassWorker::stopProcessing(void)
@@ -119,10 +121,11 @@ void MatchClassWorker::process(void)
             }
 
             // Now trigger a method that opens the context menu in QML with the methods
-            if (false ==  this->matchedClassName.isEmpty())
+            if (false == this->matchedClassName.isEmpty() && false == this->forMatchedFunctionMenu)
             {
                 ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY); 
             }
+            this->forMatchedFunctionMenu = false;
             return;
         }
         else

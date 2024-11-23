@@ -15,6 +15,8 @@ public:
 
     // Method to stop the processing
     void stopProcessing(void);
+
+    QString getTypedAfterKeyword(void) const;
 public slots:
     void process(void);
 

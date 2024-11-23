@@ -889,7 +889,7 @@ void LuaEditorModelItem::resetMatchedClass()
     this->closeIntellisense();
 }
 
-void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
+void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu)
 {
     // If there's already a worker, interrupt its process
     if (Q_NULLPTR != this->matchClassWorker)
@@ -897,13 +897,7 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QSt
         // Stop the ongoing process
         this->matchClassWorker->stopProcessing();
 
-        // Optionally, you might want to wait for the finished signal before updating parameters
-        // But this might block the UI; consider how you want to handle it
-        // connect(worker, &MatchClassWorker::finished, this, [this, currentText, textAfterKeyword, cursorPos, mouseX, mouseY]() {
-        //     worker->setParameters(currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
-        // });
-
-        this->matchClassWorker->setParameters(forConstant, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
+        this->matchClassWorker->setParameters(forConstant, currentText, textAfterKeyword, cursorPos, mouseX, mouseY, forMatchedFunctionMenu);
 
         // Emit a request to process in the worker thread
         Q_EMIT this->matchClassWorker->signal_requestProcess();
@@ -911,7 +905,7 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QSt
     else
     {
         // Create a new worker instance
-        this->matchClassWorker = new MatchClassWorker(this, forConstant, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
+        this->matchClassWorker = new MatchClassWorker(this, forConstant, currentText, textAfterKeyword, cursorPos, mouseX, mouseY, forMatchedFunctionMenu);
 
         // Create and start a new thread for processing
         this->matchClassThread = QThread::create([this]
@@ -949,19 +943,28 @@ void LuaEditorModelItem::closeIntellisense()
 
 void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
 {
+    // If no matched class so far (e.g. user typed in the middle of the line '(', so first intellisense must be processed
+    if (true == this->matchedClassName.isEmpty())
+    {
+        // Start for matchedFunction (true flag, so that no intellisense will be shown)
+        this->startIntellisenseProcessing(false, this->content, "", cursorPos, mouseY, mouseY, true);
+    }
+
     // If there's already a worker, interrupt its process
     if (Q_NULLPTR != this->matchMethodWorker)
     {
         // Stop the ongoing process
         this->matchMethodWorker->stopProcessing();
 
-        // Optionally, you might want to wait for the finished signal before updating parameters
-        // But this might block the UI; consider how you want to handle it
-        // connect(worker, &MatchMethodWorker::finished, this, [this, currentText, textAfterKeyword, cursorPos, mouseX, mouseY]() {
-        //     worker->setParameters(currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
-        // });
-
-        this->matchMethodWorker->setParameters(this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
+        // if intelliseSense processing prior started, there is so far no typed text after keyword, but in the past it has been already set for the method worker, so is it in this special case
+        if (true == textAfterKeyword.isEmpty())
+        {
+            this->matchMethodWorker->setParameters(this->matchedClassName, this->matchMethodWorker->getTypedAfterKeyword(), cursorPos, mouseX, mouseY);
+        }
+        else
+        {
+             this->matchMethodWorker->setParameters(this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
+        }
 
         if (!textAfterKeyword.endsWith('.') && !textAfterKeyword.endsWith(':'))
         {

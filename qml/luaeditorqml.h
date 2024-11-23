@@ -55,7 +55,7 @@ public slots:
     void onParentChanged(QQuickItem* newParent);
 Q_SIGNALS:
     void modelChanged();
-    void requestIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY);
+    void requestIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu);
     void requestCloseIntellisense();
 
     void requestMatchedFunctionContextMenu(const QString& textAfterColon, int cursorPos, int mouseX, int mouseY);

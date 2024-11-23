@@ -77,7 +77,7 @@ public:
     void resetMatchedClass(void);
 
 public slots:
-    void startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
+    void startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu = false);
 
     void closeIntellisense(void);
 

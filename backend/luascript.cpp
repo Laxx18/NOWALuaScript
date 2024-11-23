@@ -62,38 +62,6 @@ QString LuaScript::getContent(void) const
     return this->content;
 }
 
-#if 0
-bool LuaScript::checkSyntax(const QString& luaCode)
-{
-    int result = luaL_loadstring(this->lua, luaCode.toStdString().c_str());
-
-    int errorLine = 0;
-    QString errorMessage;
-
-    if (result == /*LUA_OK*/ 0)
-    {
-        Q_EMIT signal_syntaxCheckFinished(true, errorLine, errorMessage);
-        return true;  // No syntax errors
-    }
-    else
-    {
-        const char* errorMsg = lua_tostring(this->lua, -1);
-        QString errorStr = QString(errorMsg);
-        QRegularExpression regex(R"(\[string\s\".*\"\]:(\d+):\s(.*))");
-        QRegularExpressionMatch match = regex.match(errorStr);
-        if (match.hasMatch())
-        {
-            errorLine = match.captured(1).toInt();  // Capture the line number
-            errorMessage = match.captured(2);       // Capture the error message
-        }
-        Q_EMIT signal_syntaxCheckFinished(false, errorLine, errorMessage);
-        return false;  // Syntax error found
-    }
-}
-#endif
-
-#include <QRegularExpression>
-
 void LuaScript::checkSyntax(const QString& luaCode)
 {
     // Attempt to load the Lua code
@@ -115,7 +83,7 @@ void LuaScript::checkSyntax(const QString& luaCode)
         if (match.hasMatch())
         {
             errorLine = match.captured(1).toInt();
-            qDebug() << "Error line set from 'file:line:message' to: " << errorLine;
+            // qDebug() << "Error line set from 'file:line:message' to: " << errorLine;
         }
 
         // Step 3: Check for "at line X" in the error message
@@ -126,7 +94,7 @@ void LuaScript::checkSyntax(const QString& luaCode)
         {
             // Found "at line X", set this as the error line
             errorLine = match.captured(1).toInt();
-            qDebug() << "Error line set from 'at line X' to: " << errorLine;
+            // qDebug() << "Error line set from 'at line X' to: " << errorLine;
         }
 
         if (-1 != errorLine)

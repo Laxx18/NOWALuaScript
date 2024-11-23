@@ -218,7 +218,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
     this->currentText = this->quickTextDocument->textDocument()->toPlainText();
 
     // Cursor jump, clear everything
-    if (this->cursorPosition != this->oldCursorPosition + 1)
+    if (this->cursorPosition != this->oldCursorPosition + 1 && this->cursorPosition != this->oldCursorPosition)
     {
         this->resetTextAfterColon();
         this->resetTextAfterDot();
@@ -299,6 +299,25 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 isColonDeleted = true;
             }
         }
+        else
+        {
+            // Removed an opening bracket
+            if (this->cursorPosition > 0)
+            {
+                this->cursorPosition--;
+                this->oldCursorPosition--;
+                this->cursorPositionChanged(this->cursorPosition);
+                this->typedAfterDot.removeLast();
+                this->typedAfterColon.removeLast();
+
+                QString textAt = this->currentText[this->cursorPosition];
+                if (textAt == '(')
+                {
+                    this->isInMatchedFunctionProcessing = false;
+                    Q_EMIT requestCloseMatchedFunctionContextMenu();
+                }
+            }
+        }
     }
 
     // Reset context if a colon was deleted
@@ -315,8 +334,6 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
         Q_EMIT requestCloseIntellisense();
     }
 
-    bool corruptAfterColon = false;
-
     // Check if we're typing after a colon and sequentially
     if (true == this->isAfterColon)
     {
@@ -324,7 +341,6 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
         {
             this->resetTextAfterColon();
             this->requestCloseMatchedFunctionContextMenu();
-            corruptAfterColon = true;
             this->luaEditorModelItem->resetMatchedClass();
         }
         else
@@ -335,7 +351,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 this->typedAfterColon.append(keyword);
 
                 // Start autocompletion with at least 3 chars
-                if (this->typedAfterColon.size() >= 3)
+                if (this->typedAfterColon.size() >= 3 && (keyword != '(' && keyword != ')') && false == this->typedAfterDot.contains(')'))
                 {
                     if (keyword == '.')
                     {
@@ -373,7 +389,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 this->typedAfterDot.append(keyword);
 
                 // Start autocompletion with at least 3 chars
-                if (this->typedAfterDot.size() >= 3)
+                if (this->typedAfterDot.size() >= 3 && (keyword != '(' && keyword != ')') && false == this->typedAfterDot.contains(')'))
                 {
                     this->showIntelliSenseContextMenuAtCursor(true, this->typedAfterDot);
                 }
@@ -386,8 +402,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
     {
         this->processBracket(keyword);
     }
-
-    if (this->typedAfterColon.contains("(") && !this->typedAfterColon.endsWith('.') && !this->typedAfterColon.endsWith(':'))
+    if (this->typedAfterColon.contains("(") && !this->typedAfterColon.endsWith('.') && !this->typedAfterColon.endsWith(':') && keyword != ')')
     {
         this->isInMatchedFunctionProcessing = true;
         this->showMachtedFunctionContextMenuAtCursor(this->typedAfterColon);
@@ -399,7 +414,7 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
     }
 
     // Detect new colon and update lastColonIndex
-    if (keyword == ':' && false == corruptAfterColon)
+    if (keyword == ':')
     {
         this->isAfterColon = true;
         this->typedAfterColon.clear();
@@ -517,10 +532,8 @@ void LuaEditorQml::processBracket(QChar keyword)
             textFromColonToBracket += keyword;
 
             // Optionally, skip processing based on extracted text or take further actions here
-            if (false == textFromColonToBracket.isEmpty())
+            if (false == textFromColonToBracket.isEmpty() && keyword != ')')
             {
-                this->showIntelliSenseContextMenu(false);
-
                 this->isInMatchedFunctionProcessing = true;
                 Q_EMIT requestCloseIntellisense();
 
@@ -528,7 +541,7 @@ void LuaEditorQml::processBracket(QChar keyword)
                 this->isAfterDot = false;
                 this->typedAfterColon = textFromColonToBracket;
 
-                // this->showMachtedFunctionContextMenuAtCursor(this->typedAfterColon);
+                this->showMachtedFunctionContextMenuAtCursor(this->typedAfterColon);
             }
         }
     }
@@ -562,7 +575,7 @@ void LuaEditorQml::showIntelliSenseContextMenu(bool forConstant)
     }
 
     const auto& cursorGlobalPos = this->cursorAtPosition(modifiedText, cursorPos);
-    Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, "", cursorPos, cursorGlobalPos.x(), cursorGlobalPos.y());
+    Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, "", cursorPos, cursorGlobalPos.x(), cursorGlobalPos.y(), false);
 }
 
 void LuaEditorQml::showIntelliSenseContextMenuAtCursor(bool forConstant, const QString& textAfterColon)
@@ -574,7 +587,7 @@ void LuaEditorQml::showIntelliSenseContextMenuAtCursor(bool forConstant, const Q
     }
 
     const auto& cursorGlobalPos = this->cursorAtPosition(this->currentText, this->cursorPosition);
-    Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, textAfterColon, this->cursorPosition, cursorGlobalPos.x(), cursorGlobalPos.y());
+    Q_EMIT requestIntellisenseProcessing(forConstant, this->currentText, textAfterColon, this->cursorPosition, cursorGlobalPos.x(), cursorGlobalPos.y(), false);
 }
 
 void LuaEditorQml::showMachtedFunctionContextMenuAtCursor(const QString& textAfterColon)

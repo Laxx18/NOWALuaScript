@@ -31,6 +31,11 @@ void MatchMethodWorker::stopProcessing(void)
     this->isStopped = true;
 }
 
+QString MatchMethodWorker::getTypedAfterKeyword(void) const
+{
+    return this->typedAfterKeyword;
+}
+
 void MatchMethodWorker::process(void)
 {
     this->isProcessing = true;
@@ -103,6 +108,8 @@ void MatchMethodWorker::process(void)
             // Move to the start of the next parameter (including comma and space)
             currentParamStart = currentParamEnd + 2;
         }
+
+        this->typedAfterKeyword.clear();
     }
 
     this->isProcessing = false;

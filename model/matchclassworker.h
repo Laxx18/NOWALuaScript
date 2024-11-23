@@ -9,9 +9,9 @@ class MatchClassWorker : public QObject
 {
     Q_OBJECT
 public:
-    MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPosition, int mouseX, int mouseY);
+    MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPosition, int mouseX, int mouseY, bool forMatchedFunctionMenu);
 
-    void setParameters(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
+    void setParameters(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu);
 
     // Method to stop the processing
     void stopProcessing(void);
@@ -39,6 +39,7 @@ private:
     QString matchedClassName;
     bool isProcessing; // Flag to track processing state
     bool isStopped;    // Flag to signal processing should stop
+    bool forMatchedFunctionMenu;
 };
 
 #endif // MATCHCLASSWORKER_H
