@@ -259,8 +259,9 @@ void LuaEditorModelItem::detectVariables(void)
             continue;
         }
 
-        detectLocalVariables(line, i + 1);
-        detectGlobalVariables(line, i + 1);
+        this->detectLocalVariables(line, i + 1);
+        this->detectGlobalVariables(line, i + 1);
+        this->detectSingletons(line, i + 1);
     }
 
     bool needThirdRound = false;
@@ -288,15 +289,15 @@ void LuaEditorModelItem::detectVariables(void)
             for (const QString& statement : statements)
             {
                 // Handle method chain assignments
-                handleCastAssignment(statement, i + 1);
-                // handleMethodCallAssignment(statement, i + 1);
-                handleSimpleAssignment(statement, i + 1);
-                // handleMethodChainAssignment(statement, i + 1);
-                handleMethodChain(statement, i + 1);
+                this->handleCastAssignment(statement, i + 1);
+                this->handleMethodCallAssignment(statement, i + 1);
+                this->handleSimpleAssignment(statement, i + 1);
+                // this->handleMethodChainAssignment(statement, i + 1);
+                this->handleMethodChain(statement, i + 1);
 
-                handleTableAccess(statement, i + 1);
+                this->handleTableAccess(statement, i + 1);
                 // Handle for and while loops (No more necessary)
-                // handleLoop(statement, i + 1, lines);
+                // this->handleLoop(statement, i + 1, lines);
             }
         }
 
@@ -348,6 +349,30 @@ void LuaEditorModelItem::detectGlobalVariables(const QString& line, int lineNumb
         this->variableMap[varName] = LuaVariableInfo{varName, "", lineNumber, "global"};
     }
 }
+
+void LuaEditorModelItem::detectSingletons(const QString& line, int lineNumber)
+{
+    // Regular expression to detect singleton usage
+    QRegularExpression singletonRegex(
+        R"(\b(\w+)\b(?=\s*(?:;|$|:)))");
+    QRegularExpressionMatch match = singletonRegex.match(line);
+
+    if (match.hasMatch())
+    {
+        QString className = match.captured(1); // Singleton class name
+
+        // Check if it's a valid class name
+        if (ApiModel::instance()->isValidClassName(className))
+        {
+            // Add to the variable map if not already present
+            if (!this->variableMap.contains(className))
+            {
+                this->variableMap[className] = LuaVariableInfo{className, className, lineNumber, "singleton"};
+            }
+        }
+    }
+}
+
 
 void LuaEditorModelItem::handleCastAssignment(const QString& statement, int lineNumber)
 {
@@ -433,6 +458,17 @@ void LuaEditorModelItem::handleMethodCallAssignment(const QString& statement, in
                     if (!returnType.isEmpty())
                     {
                         this->variableMap[leftVar] = LuaVariableInfo{leftVar, returnType, lineNumber, this->variableMap[leftVar].scope};
+
+                        // Case:  local nodeGameObjects = AppStateManager:getGameObjectController()
+                        // objectVar = AppStateManager and chain type would be GameObjectController for this line
+                        if (true == this->variableMap.contains(objectVar))
+                        {
+                            ChainTypeInfo chainTypeInfo;
+                            chainTypeInfo.line = lineNumber;
+                            chainTypeInfo.chainType = returnType;
+                            this->variableMap[objectVar].chainTypeList.append(chainTypeInfo);
+                        }
+
                         break;
                     }
 

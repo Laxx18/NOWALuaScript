@@ -119,6 +119,8 @@ private:
 
     void detectGlobalVariables(const QString& line, int lineNumber);
 
+    void detectSingletons(const QString& line, int lineNumber);
+
     void handleTableAccess(const QString& statement, int lineNumber);
 
     void handleTableTypes(const QString& variableName, const QString& statement, int lineNumber);
