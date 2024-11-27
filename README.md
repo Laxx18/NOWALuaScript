@@ -37,7 +37,8 @@ This document outlines the key features, installation, usage, and communication 
 To install and run NOWALuaScript:
 1. Clone the repository and build the project using Qt Creator or the command line.
 2. Ensure all necessary Qt dependencies are installed.
-3. Provide a Variable for CMAKE where the external application does sit. So the TARGET_PATH variable must be set and a folder specified for that variable, where the application should be deployed.
+3. Set the QT_BIN_DIR variable properly for debug and release mode. For that, goto 'Projects' -> 'Create' and filter for "QT_BIN_DIR", specify where your Qt bin dir is located. E.g. C:\Qt\6.8.0\mingw_64\bin
+5. Provide a Variable for CMAKE where the external application does sit. So the TARGET_PATH variable must be set and a folder specified for that variable, where the application should be deployed.
    This can be done in the Qt Creator e.g. if you go to "Projects", there is a list of variables. Add the variable "TARGET_PATH" click on "edit", choose folder option and set a folder.
    **Note**: "/NOWALuaScript/bin/" is appended to the TARGET_PATH variable.
 
