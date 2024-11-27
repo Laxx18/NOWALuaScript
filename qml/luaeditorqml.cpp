@@ -240,6 +240,17 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 this->cursorPosition--;
                 this->oldCursorPosition--;
                 this->cursorPositionChanged(this->cursorPosition);
+
+                // Check if the character at lastColonIndex is no longer a colon
+                QString textAt = this->currentText[this->cursorPosition];
+                if (textAt == ':')
+                {
+                    isColonDeleted = true;
+                }
+                else if (textAt == '.')
+                {
+                    isDotDeleted = true;
+                }
             }
 
             if (true == this->isAfterColon)
@@ -252,18 +263,10 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 }
                 this->typedAfterColon.removeLast();
                 this->typedAfterDot.removeLast();
-                this->showIntelliSenseContextMenuAtCursor(false, this->typedAfterColon);
-            }
-
-            // Check if the character at lastColonIndex is no longer a colon
-            QString textAt = this->currentText[this->cursorPosition];
-            if (textAt == ':')
-            {
-                isColonDeleted = true;
-            }
-            else if (textAt == '.')
-            {
-                isDotDeleted = true;
+                if (false == isColonDeleted)
+                {
+                    this->showIntelliSenseContextMenuAtCursor(false, this->typedAfterColon);
+                }
             }
         }
         else if (this->lastDotIndex >= 0 && this->lastDotIndex < this->currentText.size())
@@ -273,6 +276,17 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 this->cursorPosition--;
                 this->oldCursorPosition--;
                 this->cursorPositionChanged(this->cursorPosition);
+
+                // Check if the character at lastDotIndex is no longer a dot or colon
+                QString textAt = this->currentText[this->cursorPosition];
+                if (textAt == '.')
+                {
+                    isDotDeleted = true;
+                }
+                else if (textAt == ':')
+                {
+                    isColonDeleted = true;
+                }
             }
 
             if (true == this->isAfterDot)
@@ -285,18 +299,10 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 }
                 this->typedAfterDot.removeLast();
                 this->typedAfterColon.removeLast();
-                this->showIntelliSenseContextMenuAtCursor(true, this->typedAfterDot);
-            }
-
-            // Check if the character at lastDotIndex is no longer a dot or colon
-            QString textAt = this->currentText[this->cursorPosition];
-            if (textAt == '.')
-            {
-                isDotDeleted = true;
-            }
-            else if (textAt == ':')
-            {
-                isColonDeleted = true;
+                if (false == isDotDeleted)
+                {
+                    this->showIntelliSenseContextMenuAtCursor(true, this->typedAfterDot);
+                }
             }
         }
         else

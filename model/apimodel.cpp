@@ -80,6 +80,11 @@ QVariantList ApiModel::getConstantsForClassName(const QString& className)
     return constants;
 }
 
+bool ApiModel::getHasLuaApi() const
+{
+    return false == this->apiData.isEmpty();
+}
+
 bool ApiModel::getIsIntellisenseShown() const
 {
     return this->isIntellisenseShown;

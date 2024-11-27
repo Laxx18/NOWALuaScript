@@ -121,6 +121,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         foreach(DLL_FILE ${DLL_FILES})
             list(APPEND COPY_COMMANDS
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL_FILE}" "${CMAKE_BINARY_DIR}/bin"
+                COMMAND ${CMAKE_COMMAND} -E echo "----->Copy DLL_FILE ${DLL_FILE} to ${CMAKE_BINARY_DIR}/bin"
             )
         endforeach()
 
@@ -128,14 +129,18 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         add_custom_command(TARGET NOWALuaScript POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Copying DLL files for Release build..."
             COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
+            COMMAND ${CMAKE_COMMAND} -E echo "--->Create directory ${CMAKE_BINARY_DIR}/bin"
             ${COPY_COMMANDS}
             # Copy thirdparty like lua
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/lua-5_2/bin/Lua.dll" "${CMAKE_BINARY_DIR}/bin"
+            COMMAND ${CMAKE_COMMAND} -E echo "----->Copy Lua.dll to ${CMAKE_BINARY_DIR}/bin"
             # Copy exe from build/.../ to the bin dir
             COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:NOWALuaScript> "${CMAKE_BINARY_DIR}/bin"
+            COMMAND ${CMAKE_COMMAND} -E echo "----->Copy TARGET_FILE $<TARGET_FILE:NOWALuaScript> to ${CMAKE_BINARY_DIR}/bin"
             COMMENT "Copying necessary Qt libraries and executable to the output directory"
             # Copies missing necessary files via Qt script automatically
             COMMAND ${QT_BIN_DIR}/windeployqt --dir ${CMAKE_BINARY_DIR}/bin NOWALuaScript.exe --qmldir ${CMAKE_SOURCE_DIR}
+            COMMAND ${CMAKE_COMMAND} -E echo "----->windeployqt from ${QT_BIN_DIR}/windeployqt to ${CMAKE_BINARY_DIR}/bin NOWALuaScript.exe and qmldir from: ${CMAKE_SOURCE_DIR}"
             COMMENT "Deploying Qt DLLs and QML files using windeployqt"
         )
 
@@ -144,8 +149,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(DESTINATION_DIR "${TARGET_PATH}/NOWALuaScript/bin")
 
         add_custom_command(
-            TARGET NOWALuaScript  # Replace with the name of your build target
+            TARGET NOWALuaScript
             POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${DESTINATION_DIR}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${SOURCE_DIR} ${DESTINATION_DIR}
             COMMENT "Copying all files and subdirectories from ${SOURCE_DIR} to ${DESTINATION_DIR} after build"
         )
@@ -160,10 +166,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 
 endif()
 
-message(STATUS "--->Executable path: ${CMAKE_BINARY_DIR}/NOWALuaScript.exe")
-message(STATUS "--->Target file: $<TARGET_FILE:NOWALuaScript>")
-message(STATUS "--->Bin path: ${CMAKE_BINARY_DIR}/bin")
-message(STATUS "--->Copy path: ${Qt6_DIR}")
-message(STATUS "--->Source path: ${CMAKE_SOURCE_DIR}")
-message(STATUS "--->Install Prefix path: ${Qt6Core_INSTALL_PREFIX}")
-message(STATUS "--->Deploy script path: ${deploy_script}")
+#message(STATUS "--->Executable path: ${CMAKE_BINARY_DIR}/NOWALuaScript.exe")
+#message(STATUS "--->Target file: $<TARGET_FILE:NOWALuaScript>")
+#message(STATUS "--->Bin path: ${CMAKE_BINARY_DIR}/bin")
+#message(STATUS "--->Copy path: ${Qt6_DIR}")
+#message(STATUS "--->Source path: ${CMAKE_SOURCE_DIR}")
+#message(STATUS "--->Install Prefix path: ${Qt6Core_INSTALL_PREFIX}")
+#message(STATUS "--->Deploy script path: ${deploy_script}")

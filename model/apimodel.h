@@ -29,6 +29,7 @@ public:
 
     Q_PROPERTY(bool isMatchedFunctionShown READ getIsMatchedFunctionShown WRITE setIsMatchedFunctionShown NOTIFY isMatchedFunctionShownChanged FINAL)
 
+    Q_PROPERTY(bool hasLuaApi READ getHasLuaApi CONSTANT FINAL)
 public:
     explicit ApiModel(QObject* parent = Q_NULLPTR);
 
@@ -117,6 +118,8 @@ public:
 
     void setConstantsForSelectedClass(const QVariantList& constantsForSelectedClass);
 
+    bool getHasLuaApi() const;
+
 Q_SIGNALS:
     void selectedClassNameChanged();
 
@@ -176,6 +179,8 @@ private:
 
     bool isIntellisenseShown;
     bool isMatchedFunctionShown;
+
+    bool hasLuaApi;
 };
 
 #endif // APIMODEL_H

@@ -290,7 +290,7 @@ void LuaEditorModelItem::detectVariables(void)
             {
                 // Handle method chain assignments
                 this->handleCastAssignment(statement, i + 1);
-                this->handleMethodCallAssignment(statement, i + 1);
+                // this->handleMethodCallAssignment(statement, i + 1);
                 this->handleSimpleAssignment(statement, i + 1);
                 // this->handleMethodChainAssignment(statement, i + 1);
                 this->handleMethodChain(statement, i + 1);
@@ -638,7 +638,7 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
                     {
                         qDebug() << "Cannot resolve type for base class/variable" << baseClassOrVar;
                     }
-                    break;
+                    continue;
                 }
 
                 // Use ApiModel to get method details
@@ -649,7 +649,7 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
                     {
                         qDebug() << "Method" << methodCall << "not found in class" << currentType;
                     }
-                    break;
+                    continue;
                 }
 
                 // Get the return type for the next step
@@ -660,7 +660,7 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
                     {
                         qDebug() << "Method" << methodCall << "has no return type information";
                     }
-                    break;
+                    continue;
                 }
 
                 if (true == this->printToConsole)
