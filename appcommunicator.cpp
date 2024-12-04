@@ -54,6 +54,16 @@ AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScrip
             }
         });
     });
+
+
+    QDir dir(watchDirectory);
+    QStringList xmlFiles = dir.entryList({"*.xml"}, QDir::Files);
+
+    for (const QString& fileName : xmlFiles)
+    {
+        qDebug() << "Detected change in XML file:" << fileName;
+        this->readXmlFile(watchDirectory + "/" + fileName);
+    }
 #endif
 }
 
