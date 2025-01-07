@@ -15,6 +15,8 @@ LuaEditorModelItem::LuaEditorModelItem(QObject* parent)
     matchClassThread(Q_NULLPTR),
     matchMethodWorker(Q_NULLPTR),
     matchMethodThread(Q_NULLPTR),
+    matchVariablesWorker(Q_NULLPTR),
+    matchVariablesThread(Q_NULLPTR),
     printToConsole(false)
 {
 
@@ -925,6 +927,82 @@ void LuaEditorModelItem::resetMatchedClass()
     this->closeIntellisense();
 }
 
+bool LuaEditorModelItem::hasVariablesDetected() const
+{
+    return !this->variableMap.empty();
+}
+
+QVariantMap LuaEditorModelItem::processMatchedVariables(bool forSingleton, const QString& text)
+{
+    QVariantMap matchedVariables;
+
+    // Only process if text has a sufficient length
+    if (text.size() < 3 || variableMap.isEmpty())
+    {
+        return matchedVariables; // Return empty if no valid input or variables
+    }
+
+    if (false == forSingleton)
+    {
+        for (auto it = this->variableMap.begin(); it != this->variableMap.end(); ++it)
+        {
+            if ((it.value().scope == "local" || it.value().scope == "global") && it.value().name.contains(text, Qt::CaseSensitive))
+            {
+                // Create match details
+                QVariantMap matchDetails;
+                matchDetails["name"] = it.value().name;
+                matchDetails["type"] = it.value().type;
+                matchDetails["scope"] = it.value().scope;
+
+                // Find the start and end indices of the match
+                int startIndex = it.value().name.indexOf(text, 0, Qt::CaseSensitive);
+                int endIndex = startIndex + text.length() - 1;
+
+                matchDetails["startIndex"] = startIndex;
+                matchDetails["endIndex"] = endIndex;
+
+                // Store in QVariantMap with variable name as the key
+                matchedVariables[it.value().name] = matchDetails;
+            }
+        }
+    }
+    else
+    {
+        const auto& apiData = ApiModel::instance()->getApiData();
+
+        for (auto it = apiData.cbegin(); it != apiData.cend(); ++it)
+        {
+            const LuaScriptAdapter::ClassData& classData = it.value();
+
+            // Check all singletons from the lua api directly
+            if ("singleton" == classData.type)
+            {
+                QString name = it.key();
+                if (name.contains(text, Qt::CaseSensitive))
+                {
+                    // Create match details
+                    QVariantMap matchDetails;
+                    matchDetails["name"] = name;
+                    matchDetails["type"] = it.value().type;
+                    matchDetails["scope"] = "singleton";
+
+                    // Find the start and end indices of the match
+                    int startIndex = name.indexOf(text, 0, Qt::CaseSensitive);
+                    int endIndex = startIndex + text.length() - 1;
+
+                    matchDetails["startIndex"] = startIndex;
+                    matchDetails["endIndex"] = endIndex;
+
+                    // Store in QVariantMap with variable name as the key
+                    matchedVariables[name] = matchDetails;
+                }
+            }
+        }
+    }
+
+    return matchedVariables;
+}
+
 void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu)
 {
     // If there's already a worker, interrupt its process
@@ -1033,6 +1111,55 @@ void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& textAfter
 
         // Start processing
         this->matchMethodThread->start();
+    }
+}
+
+void LuaEditorModelItem::startMatchedVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY)
+{
+    // If no matched class so far (e.g. user typed in the middle of the line '(', so first intellisense must be processed
+    if (text.size() >= 3)
+    {
+        // Start for matchedFunction (true flag, so that no intellisense will be shown)
+        ApiModel::instance()->closeIntellisense();
+        ApiModel::instance()->closeMatchedFunction();
+    }
+
+    // If there's already a worker, interrupt its process
+    if (Q_NULLPTR != this->matchVariablesWorker)
+    {
+        // Stop the ongoing process
+        this->matchVariablesWorker->stopProcessing();
+
+        this->matchVariablesWorker->setParameters(forSingleton, text, cursorPos, mouseX, mouseY);
+
+        // Emit a request to process in the worker thread
+        Q_EMIT this->matchVariablesWorker->signal_requestProcess();
+    }
+    else
+    {
+        // Create a new worker instance
+        this->matchVariablesWorker = new MatchVariablesWorker(this, forSingleton, text, cursorPos, mouseX, mouseY);
+
+        // Create and start a new thread for processing
+        this->matchVariablesThread = QThread::create([this]
+                                                     {
+                                                         // Connect the signal to the process method
+                                                         QObject::connect(this->matchVariablesWorker, &MatchVariablesWorker::signal_requestProcess, this->matchVariablesWorker, &MatchVariablesWorker::process);
+                                                         this->matchVariablesWorker->process();
+                                                     });
+
+        QObject::connect(this->matchVariablesWorker, &MatchVariablesWorker::finished, this, [this]() {
+            // Cleanup and reset when finished
+            delete this->matchVariablesWorker; // Delete the worker instance when done
+            this->matchVariablesWorker = Q_NULLPTR; // Reset the worker pointer
+            this->matchClassThread->quit();  // Quit the thread
+        });
+
+        QObject::connect(this->matchVariablesWorker, &MatchVariablesWorker::finished, this->matchVariablesWorker, &MatchVariablesWorker::deleteLater);
+        QObject::connect(this->matchVariablesThread, &QThread::finished, this->matchVariablesThread, &QThread::deleteLater);
+
+        // Start processing
+        this->matchVariablesThread->start();
     }
 }
 

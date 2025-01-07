@@ -349,6 +349,16 @@ void LuaEditorModel::sendTextToEditor(const QString& text)
     }
 }
 
+void LuaEditorModel::sendVariableTextToEditor(const QString &text)
+{
+    const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
+    if (Q_NULLPTR != luaEditorModelItem)
+    {
+        ApiModel::instance()->setSelectedMethodName(text);
+        luaEditorModelItem->signal_sendVariableTextToEditor(text);
+    }
+}
+
 void LuaEditorModel::setSelectedSearchText(const QString& searchText)
 {
     Q_EMIT signal_setSelectedSearchText(searchText);

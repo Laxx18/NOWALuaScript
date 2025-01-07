@@ -26,7 +26,7 @@ Rectangle
         property string backgroundClickColor: "darkblue";
         property string textColor: "white";
         property string borderColor: "grey";
-        property bool forConstant: false;
+        property string resultType: "forClass"; // Possible values: forClass, forConstant, forVariable
         property int currentIndex: 0;  // Track selected index
     }
 
@@ -49,19 +49,24 @@ Rectangle
                 keyHoverTimer.restart();
                 flickable.ensureVisible(p.currentIndex);
             }
-            else if (key === Qt.Key_Tab && p.currentIndex >= 0)
+            else if ((key === Qt.Key_Tab || key === Qt.Key_Return) && p.currentIndex >= 0)
             {
                 var selectedIdentifier;
-                if (!p.forConstant)
+                if (p.resultType == "forClass")
                 {
                     selectedIdentifier = NOWAApiModel.methodsForSelectedClass[p.currentIndex];
+                    NOWALuaEditorModel.sendTextToEditor(selectedIdentifier.name);
                 }
-                else
+                else if (p.resultType == "forConstant")
                 {
                     selectedIdentifier = NOWAApiModel.constantsForSelectedClass[p.currentIndex];
+                    NOWALuaEditorModel.sendTextToEditor(selectedIdentifier.name);
                 }
-
-                NOWALuaEditorModel.sendTextToEditor(selectedIdentifier.name);
+                else if (p.resultType == "forVariable")
+                {
+                    selectedIdentifier = NOWAApiModel.matchedVariables[p.currentIndex];
+                    NOWALuaEditorModel.sendVariableTextToEditor(selectedIdentifier.name);
+                }
             }
         }
     }
@@ -76,7 +81,7 @@ Rectangle
         {
             var selectedIdentifier;
             var content = "";
-            if (!p.forConstant)
+            if (p.resultType == "forClass")
             {
                 selectedIdentifier = NOWAApiModel.methodsForSelectedClass[p.currentIndex];
                 if (selectedIdentifier.description)
@@ -88,7 +93,7 @@ Rectangle
                     content = "Details: " + selectedIdentifier.returns + " " + selectedIdentifier.name + selectedIdentifier.args;
                 }
             }
-            else
+            else if (p.resultType == "forConstant")
             {
                 selectedIdentifier = NOWAApiModel.constantsForSelectedClass[p.currentIndex];
                 if (selectedIdentifier.description)
@@ -98,6 +103,18 @@ Rectangle
                 else
                 {
                     content = "Details: Constant: " + selectedIdentifier.name;
+                }
+            }
+            else if (p.resultType == "forVariable")
+            {
+                selectedIdentifier = NOWAApiModel.matchedVariables[p.currentIndex];
+                if (selectedIdentifier.description)
+                {
+                    content = "Details: Variable: " + selectedIdentifier.description + "\n" + selectedIdentifier.name + "\nType: " + selectedIdentifier.scope;
+                }
+                else
+                {
+                    content = "Details: Variable: " + selectedIdentifier.name + "\nType: " + selectedIdentifier.scope;
                 }
             }
 
@@ -114,10 +131,11 @@ Rectangle
         Rectangle
         {
             id: classNameRect;
-            height: p.itemHeight;
+            height: p.resultType != "forVariable" ? p.itemHeight : 0;
             width: root.width;
             color: p.backgroundColor;
             border.color: p.borderColor;
+            visible: p.resultType != "forVariable";
 
             Row
             {
@@ -140,10 +158,11 @@ Rectangle
         Rectangle
         {
             id: descriptionRect;
-            height: descriptionText.height + p.textMargin;
+            height: p.resultType != "forVariable" ? descriptionText.height + p.textMargin : 0;
             width: root.width;
             color: p.backgroundColor;
             border.color: p.borderColor;
+            visible: p.resultType != "forVariable";
 
             Row
             {
@@ -166,10 +185,11 @@ Rectangle
         Rectangle
         {
             id: inheritsRect;
-            height: p.itemHeight;
+            height: p.resultType != "forVariable" ? p.itemHeight : 0;
             width: root.width;
             color: p.backgroundColor;
             border.color: p.borderColor;
+            visible: p.resultType != "forVariable";
 
             Row
             {
@@ -192,10 +212,11 @@ Rectangle
         Rectangle
         {
             id: detailsArea;
-            height: Math.max(details.height + 10, 100);
+            height: p.resultType != "forVariable" ? Math.max(details.height + 10, 100) : 0;
             width: root.width;
             color: p.backgroundColor;
             border.color: p.borderColor;
+            visible: p.resultType != "forVariable";
 
             Row
             {
@@ -288,7 +309,10 @@ Rectangle
                     id: repeaterContent;
 
                     // Sets a model either for constants or for methods
-                    model: !p.forConstant ? NOWAApiModel.methodsForSelectedClass : NOWAApiModel.constantsForSelectedClass;
+                    model:
+                        p.resultType === "forClass" ? NOWAApiModel.methodsForSelectedClass :
+                        p.resultType === "forConstant" ? NOWAApiModel.constantsForSelectedClass :
+                        NOWAApiModel.matchedVariables;
 
                     delegate: Rectangle
                     {
@@ -321,37 +345,28 @@ Rectangle
                                 id: internalText;
                                 color: p.textColor;
                                 textFormat: Text.RichText;
-                                // text: modelData.returns + " " + modelData.name + modelData.args;
+
                                 text:
                                 {
                                     var nameText = modelData.name;
-                                    var preMatch;
-                                    var matchText;
-                                    var postMatch;
+                                    var preMatch, matchText, postMatch;
 
-                                    if (!p.forConstant)
+                                    if (modelData.startIndex >= 0 && modelData.endIndex > modelData.startIndex)
                                     {
-                                        if (modelData.startIndex >= 0 && modelData.endIndex > modelData.startIndex)
-                                        {
-                                            preMatch = nameText.substring(0, modelData.startIndex);
-                                            matchText = nameText.substring(modelData.startIndex, modelData.endIndex + 1);
-                                            postMatch = nameText.substring(modelData.endIndex + 1);
-                                            // #FFDAB9 = Peach Puff
-                                            nameText = preMatch + "<b><span style='color:#FFDAB9;'>" + matchText + "</span></b>" + postMatch;
-                                        }
-                                        return modelData.returns + " " + nameText + modelData.args;
+                                        preMatch = nameText.substring(0, modelData.startIndex);
+                                        matchText = nameText.substring(modelData.startIndex, modelData.endIndex + 1);
+                                        postMatch = nameText.substring(modelData.endIndex + 1);
+                                        nameText = preMatch + "<b><span style='color:#FFDAB9;'>" + matchText + "</span></b>" + postMatch;
                                     }
-                                    else
+
+                                    switch (p.resultType)
                                     {
-                                        if (modelData.startIndex >= 0 && modelData.endIndex > modelData.startIndex)
-                                        {
-                                            preMatch = nameText.substring(0, modelData.startIndex);
-                                            matchText = nameText.substring(modelData.startIndex, modelData.endIndex + 1);
-                                            postMatch = nameText.substring(modelData.endIndex + 1);
-                                            // #FFDAB9 = Peach Puff
-                                            nameText = preMatch + "<b><span style='color:#FFDAB9;'>" + matchText + "</span></b>" + postMatch;
-                                        }
-                                        return nameText;
+                                        case "forClass":
+                                            return modelData.returns + " " + nameText + modelData.args;
+                                        case "forConstant":
+                                            return nameText;
+                                        case "forVariable":
+                                            return "Matched: " +  nameText + " -> Type: '" + modelData.type + "' scope: '" + modelData.scope + "'";
                                     }
                                 }
 
@@ -434,12 +449,16 @@ Rectangle
         }
     }
 
-    function open(forConstant, x, y)
+    function open(resultType, x, y)
     {
-        p.forConstant = forConstant;
+        p.resultType = resultType;
         p.currentIndex = 0;
 
-        calculateMaxWidth();
+        // Clear flickable contentHeight explicitly before recalculating
+        flickable.contentHeight = 0;
+        contentWrapper.height = 0;
+
+        calculateMaxSize();
 
         let pHeight = parent.height; // Total height of the parent
         let rHeight = root.height;  // Height of the menu itself
@@ -471,7 +490,7 @@ Rectangle
         root.visible = false;
     }
 
-    function calculateMaxWidth()
+    function calculateMaxSize()
     {
         var maxWidth = 0;
         var maxHeight = 0;

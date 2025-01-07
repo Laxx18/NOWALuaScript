@@ -45,6 +45,8 @@ public:
 
     Q_INVOKABLE void sendTextToEditor(const QString& text);
 
+    Q_INVOKABLE void sendVariableTextToEditor(const QString& text);
+
     Q_INVOKABLE void setSelectedSearchText(const QString& searchText);
 public:
     Q_PROPERTY(bool hasChanges READ getHasChanges NOTIFY hasChangesChanged FINAL)

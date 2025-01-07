@@ -25,6 +25,8 @@ public:
 
     Q_PROPERTY(QVariantList constantsForSelectedClass READ getConstantsForSelectedClass NOTIFY constantsForSelectedClassChanged)
 
+    Q_PROPERTY(QVariantList matchedVariables READ getMatchedVariables NOTIFY matchedVariablesChanged)
+
     Q_PROPERTY(bool isIntellisenseShown READ getIsIntellisenseShown WRITE setIsIntellisenseShown NOTIFY isIntellisenseShownChanged FINAL)
 
     Q_PROPERTY(bool isMatchedFunctionShown READ getIsMatchedFunctionShown WRITE setIsMatchedFunctionShown NOTIFY isMatchedFunctionShownChanged FINAL)
@@ -58,6 +60,8 @@ public:
 
     void setApiData(const QMap<QString, LuaScriptAdapter::ClassData>& apiData);
 
+    const QMap<QString, LuaScriptAdapter::ClassData>& getApiData(void) const;
+
     virtual int rowCount(const QModelIndex& parent = QModelIndex()) const override;
 
     virtual QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -76,6 +80,8 @@ public:
 
     QVariantList getConstantsForSelectedClass() const;
 
+    QVariantList getMatchedVariables() const;
+
     void processMatchedMethodsForSelectedClass(const QString& selectedClassName, const QString& typedAfterColon);
 
     void processMatchedConstantsForSelectedClass(const QString& selectedClassName, const QString& typedAfterKeyword);
@@ -86,7 +92,7 @@ public:
 
     bool isValidMethodName(const QString& className, const QString& methodName);
 
-    void showIntelliSenseMenu(bool forConstant, const QString& wordBeforeColon, int mouseX, int mouseY);
+    void showIntelliSenseMenu(const QString& resultType, const QString& wordBeforeColon, int mouseX, int mouseY);
 
     void showMatchedFunctionMenu(int mouseX, int mouseY);
 
@@ -120,6 +126,8 @@ public:
 
     bool getHasLuaApi() const;
 
+    void setMatchedVariables(const QVariantMap& matchedVariables);
+
 Q_SIGNALS:
     void selectedClassNameChanged();
 
@@ -129,13 +137,15 @@ Q_SIGNALS:
 
     void constantsForSelectedClassChanged();
 
+    void matchedVariablesChanged();
+
     void classTypeChanged();
 
     void classDescriptionChanged();
 
     void classInheritsChanged();
 
-    void signal_showIntelliSenseMenu(bool forConstant, int mouseX, int mouseY);
+    void signal_showIntelliSenseMenu(const QString& resultType, int mouseX, int mouseY);
 
     void signal_closeIntellisense();
 
@@ -172,6 +182,7 @@ private:
     QString selectedMethodName;
     QVariantList methodsForSelectedClass;
     QVariantList constantsForSelectedClass;
+    QVariantList matchedVariables;
 
     QString classType;
     QString classDescription;

@@ -56,6 +56,9 @@ public slots:
 Q_SIGNALS:
     void modelChanged();
     void requestIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu);
+
+    void requestMatchedForVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY);
+
     void requestCloseIntellisense();
 
     void requestMatchedFunctionContextMenu(const QString& textAfterColon, int cursorPos, int mouseX, int mouseY);
@@ -67,18 +70,24 @@ private:
 
     void showIntelliSenseContextMenuAtCursor(bool forConstant, const QString& textAfterColon);
 
+    void showIntelliSenseMenuForVariablesAtCursor(bool forSingleton, const QString& text);
+
     void showMachtedFunctionContextMenuAtCursor(const QString& textAfterColon);
 
     // Helper function to get the cursor rectangle
     QPointF cursorAtPosition(const QString& currentText, int cursorPos);
 
-    void resetTextAfterColon();
+    void resetTextAfterColon(void);
 
-    void resetTextAfterDot();
+    void resetTextAfterDot(void);
+
+    bool isInsideFunctionParameters(QChar keyword);
 
     void processWithinFunction(QChar keyword);
 
     void processBracket(QChar keyword);
+
+    void processVariableBeingTyped(const QString& currentText, int cursorPosition, QChar keyword);
 private:
     LuaEditorModelItem* luaEditorModelItem;
     QQuickItem* lineNumbersEdit;
@@ -97,6 +106,7 @@ private:
     int lastColonIndex;
     int lastDotIndex;
     QString currentText;
+    QString currentLineText;
     bool isInMatchedFunctionProcessing;
 };
 

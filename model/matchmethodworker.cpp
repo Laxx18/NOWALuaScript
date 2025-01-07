@@ -41,8 +41,6 @@ void MatchMethodWorker::process(void)
     this->isProcessing = true;
     this->isStopped = false;
 
-    ApiModel::instance()->showMatchedFunctionMenu(this->mouseX, this->mouseY);
-
     // Trim `typedAfterKeyword` to remove characters after the method name
     QString trimmedMethodName = this->typedAfterKeyword;
     int bracketIndex = trimmedMethodName.indexOf('(');
@@ -63,6 +61,8 @@ void MatchMethodWorker::process(void)
 
     if (!methodDetails.isEmpty() && !this->isStopped)
     {
+        ApiModel::instance()->showMatchedFunctionMenu(this->mouseX, this->mouseY);
+
         QString returns = methodDetails["returns"].toString();
         QString methodName = methodDetails["name"].toString();
         QString args = methodDetails["args"].toString();  // args should be formatted as "(type1 param1, type2 param2, ...)"

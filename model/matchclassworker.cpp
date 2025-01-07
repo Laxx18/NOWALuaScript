@@ -123,7 +123,7 @@ void MatchClassWorker::process(void)
             // Now trigger a method that opens the context menu in QML with the methods
             if (false == this->matchedClassName.isEmpty() && false == this->forMatchedFunctionMenu)
             {
-                ApiModel::instance()->showIntelliSenseMenu(false, this->matchedClassName, mouseX, mouseY); 
+                ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
             }
             this->forMatchedFunctionMenu = false;
             return;
@@ -149,7 +149,7 @@ void MatchClassWorker::process(void)
         this->typedAfterKeyword.clear();
 
         // Emit signal directly since the data structure has already been updated
-        Q_EMIT ApiModel::instance()->signal_showIntelliSenseMenu(false, mouseX, mouseY);
+        Q_EMIT ApiModel::instance()->signal_showIntelliSenseMenu("forClass", mouseX, mouseY);
     }
 
     // Reset the processing flag before exiting
@@ -334,7 +334,7 @@ void MatchClassWorker::handleConstantsResults(void)
     // with all constants
     if (!ApiModel::instance()->getIsIntellisenseShown() && this->typedAfterKeyword.isEmpty())
     {
-        ApiModel::instance()->showIntelliSenseMenu(true, this->matchedClassName, mouseX, mouseY);
+        ApiModel::instance()->showIntelliSenseMenu("forConstant", this->matchedClassName, mouseX, mouseY);
     }
     this->isProcessing = false;
 }

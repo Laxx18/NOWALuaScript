@@ -47,9 +47,6 @@ QVariantList ApiModel::getMethodsForClassName(const QString& className)
     return methods;
 }
 
-
-
-
 QVariantList ApiModel::getConstantsForClassName(const QString& className)
 {
     QVariantList constants;
@@ -234,6 +231,11 @@ void ApiModel::setApiData(const QMap<QString, LuaScriptAdapter::ClassData>& apiD
     endResetModel();
 }
 
+const QMap<QString, LuaScriptAdapter::ClassData>& ApiModel::getApiData(void) const
+{
+    return this->apiData;
+}
+
 int ApiModel::rowCount(const QModelIndex &parent) const
 {
     Q_UNUSED(parent);
@@ -349,6 +351,11 @@ QVariantList ApiModel::getMethodsForSelectedClass() const
 QVariantList ApiModel::getConstantsForSelectedClass() const
 {
     return this->constantsForSelectedClass;
+}
+
+QVariantList ApiModel::getMatchedVariables() const
+{
+    return this->matchedVariables;
 }
 
 void ApiModel::processMatchedMethodsForSelectedClass(const QString& selectedClassName, const QString& typedAfterColon)
@@ -467,6 +474,39 @@ void ApiModel::processMatchedConstantsForSelectedClass(const QString& selectedCl
     }
 }
 
+void ApiModel::setMatchedVariables(const QVariantMap& matchedVariables)
+{
+    this->matchedVariables.clear();
+
+    QVariantMap variableMap;
+
+    for (auto it = matchedVariables.begin(); it != matchedVariables.end(); ++it)
+    {
+        if (it->canConvert<QVariantMap>())
+        {
+            QVariantMap currentVariable = it->toMap();
+
+            // Ensure the variable map has the required keys
+            if (currentVariable.contains("name") && currentVariable.contains("type") && currentVariable.contains("scope"))
+            {
+                QString name = currentVariable["name"].toString();
+                variableMap["name"] = name;
+                variableMap["type"] = currentVariable["type"];
+                variableMap["scope"] = currentVariable["scope"];
+                variableMap["startIndex"] = currentVariable["startIndex"];
+                variableMap["endIndex"] = currentVariable["endIndex"];
+
+                this->matchedVariables.append(variableMap);
+            }
+        }
+    }
+
+    if (!this->matchedVariables.isEmpty())
+    {
+        Q_EMIT matchedVariablesChanged();
+    }
+}
+
 QString ApiModel::getClassForMethodName(const QString& className, const QString& methodName)
 {
     const auto& methods = this->getMethodsForClassName(className);
@@ -484,18 +524,18 @@ QString ApiModel::getClassForMethodName(const QString& className, const QString&
     return "";
 }
 
-void ApiModel::showIntelliSenseMenu(bool forConstant, const QString& wordBeforeColon, int mouseX, int mouseY)
+void ApiModel::showIntelliSenseMenu(const QString& resultType, const QString& wordBeforeColon, int mouseX, int mouseY)
 {
     this->setSelectedClassName(wordBeforeColon);
 
     bool hasSomeThingToShow = false;
 
-    if (false == forConstant && false == this->getMethodsForSelectedClass().isEmpty())
+    if (resultType == "forClass" && false == this->getMethodsForSelectedClass().isEmpty())
     {
         hasSomeThingToShow = true;
     }
 
-    if (true == forConstant && false == hasSomeThingToShow && false == this->getConstantsForSelectedClass().isEmpty())
+    if (resultType == "forConstant" && false == hasSomeThingToShow && false == this->getConstantsForSelectedClass().isEmpty())
     {
         hasSomeThingToShow = true;
     }
@@ -505,7 +545,7 @@ void ApiModel::showIntelliSenseMenu(bool forConstant, const QString& wordBeforeC
         return;
     }
 
-    Q_EMIT signal_showIntelliSenseMenu(forConstant, mouseX, mouseY);
+    Q_EMIT signal_showIntelliSenseMenu(resultType, mouseX, mouseY);
 }
 
 void ApiModel::showMatchedFunctionMenu(int mouseX, int mouseY)

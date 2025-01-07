@@ -27,6 +27,24 @@ ApplicationWindow
 
     color: "darkslategrey";
 
+    // Flag to control forced close
+    property bool forceClose: false
+
+    onClosing: function(closeEvent)
+    {
+        if (root.forceClose)
+        {
+            // Allow closing if forced
+            closeEvent.accepted = true;
+        }
+        else if (NOWALuaEditorModel.hasChanges)
+        {
+            // Prevent closing initially
+            closeEvent.accepted = false;
+            exitAppDialog.visible = true;
+        }
+    }
+
     menuBar: MainMenu
     {
 
@@ -145,6 +163,21 @@ ApplicationWindow
         }
     }
 
+    MessageDialog
+    {
+            id: exitAppDialog;
+            visible: false;
+            text: "Unsaved Changes";
+            informativeText: "You have unsaved changes. Do you really want to close the editor?";
+            buttons: MessageDialog.Yes | MessageDialog.No;
+
+            onAccepted:
+            {
+                root.forceClose = true; // Set the flag to bypass onClosing
+                root.close(); // Trigger close again
+            }
+        }
+
     SearchDialog
     {
         id: searchDialog;
@@ -249,9 +282,9 @@ ApplicationWindow
     {
         target: NOWAApiModel;
 
-        function onSignal_showIntelliSenseMenu(forConstant, x, y)
+        function onSignal_showIntelliSenseMenu(resultType, x, y)
         {
-            intelliSenseContextMenu.open(forConstant, x, y);
+            intelliSenseContextMenu.open(resultType, x, y);
             matchedFunctionContextMenu.close();
         }
 

@@ -7,6 +7,7 @@
 
 #include "matchclassworker.h"
 #include "matchmethodworker.h"
+#include "matchvariablesworker.h"
 
 class LuaEditorModelItem : public QObject
 {
@@ -76,10 +77,16 @@ public:
 
     void resetMatchedClass(void);
 
+    bool hasVariablesDetected(void) const;
+
+    QVariantMap processMatchedVariables(bool forSingleton, const QString& text);
+
 public slots:
     void startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu = false);
 
     void closeIntellisense(void);
+
+    void startMatchedVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY);
 
     void startMatchedFunctionProcessing(const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
 
@@ -114,6 +121,8 @@ Q_SIGNALS:
     void signal_redo();
 
     void signal_sendTextToEditor(const QString& text);
+
+    void signal_sendVariableTextToEditor(const QString& text);
 private:
     void detectLocalVariables(const QString& line, int lineNumber);
 
@@ -154,6 +163,9 @@ private:
 
     MatchMethodWorker* matchMethodWorker;
     QThread* matchMethodThread;
+
+    MatchVariablesWorker* matchVariablesWorker;
+    QThread* matchVariablesThread;
 
     QString matchedClassName;
     bool printToConsole;

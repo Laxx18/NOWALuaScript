@@ -179,7 +179,7 @@ LuaEditorQml
                         // If context menu is shown, relay those key to the context menu for navigation
                         if (NOWAApiModel.isIntellisenseShown)
                         {
-                            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                            if (event.key === Qt.Key_Tab || event.key === Qt.Key_Up || event.key === Qt.Key_Down || event.key === Qt.Key_Return)
                             {
                                 LuaScriptQmlAdapter.relayKeyPress(event.key);
                                 event.accepted = true; // Prevents default behavior if necessary
@@ -197,6 +197,8 @@ LuaEditorQml
                             // Prevent the default Return behavior
                             event.accepted = true;
                             NOWALuaEditorModel.breakLine();
+                            NOWAApiModel.signal_closeIntellisense();
+                            NOWAApiModel.signal_closeMatchedFunctionMenu();
                         }
                         else if (event.key === Qt.Key_Control)
                         {

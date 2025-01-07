@@ -37,40 +37,37 @@ qt_add_executable(NOWALuaScript
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/qml)
 
-set(QML_FILES
-    qml_files/DetailsArea.qml
-    qml_files/LuaEditor.qml
-    qml_files/Main.qml
-    qml_files/MainMenu.qml
-    qml_files/SearchDialog.qml
-    qml_files/AboutDialog.qml
-    qml_files/IntelliSenseContextMenu.qml
-    qml_files/MatchedFunctionContextMenu.qml
-)
-
 qt_add_resources(NOWALuaScript "qml"
     PREFIX
         "/"
     FILES
-        ${QML_FILES}
+        qml_files/DetailsArea.qml
+        qml_files/LuaEditor.qml
+        qml_files/Main.qml
+        qml_files/MainMenu.qml
+        qml_files/SearchDialog.qml
+        qml_files/AboutDialog.qml
+        qml_files/IntelliSenseContextMenu.qml
+        qml_files/MatchedFunctionContextMenu.qml
 )
 
 qt_add_qml_module(NOWALuaScript
     URI NOWALuaScript
     VERSION 1.0
-    SOURCES luascriptcontroller.h luascriptcontroller.cpp
-    SOURCES luascriptqmladapter.h luascriptqmladapter.cpp
-    SOURCES appcommunicator.h appcommunicator.cpp
-    SOURCES backend/luascript.h backend/luascript.cpp
-    SOURCES model/luaeditormodelitem.h model/luaeditormodelitem.cpp
-    SOURCES model/luaeditormodel.h model/luaeditormodel.cpp
-    SOURCES model/apimodel.h model/apimodel.cpp
-    SOURCES model/matchclassworker.h model/matchclassworker.cpp
-    SOURCES model/matchmethodworker.h model/matchmethodworker.cpp
-    SOURCES qml/luaeditorqml.h qml/luaeditorqml.cpp
-    SOURCES qml/luahighlighter.h qml/luahighlighter.cpp
-    SOURCES luascriptadapter.h luascriptadapter.cpp
-    RESOURCES qml.qrc
+    SOURCES
+        luascriptcontroller.h luascriptcontroller.cpp
+        luascriptqmladapter.h luascriptqmladapter.cpp
+        appcommunicator.h appcommunicator.cpp
+        backend/luascript.h backend/luascript.cpp
+        model/luaeditormodelitem.h model/luaeditormodelitem.cpp
+        model/luaeditormodel.h model/luaeditormodel.cpp
+        model/apimodel.h model/apimodel.cpp
+        model/matchclassworker.h model/matchclassworker.cpp
+        model/matchmethodworker.h model/matchmethodworker.cpp
+        model/matchvariablesworker.h model/matchvariablesworker.cpp
+        qml/luaeditorqml.h qml/luaeditorqml.cpp
+        qml/luahighlighter.h qml/luahighlighter.cpp
+        luascriptadapter.h luascriptadapter.cpp
 )
 
 set_target_properties(NOWALuaScript PROPERTIES
