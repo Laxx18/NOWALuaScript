@@ -29,6 +29,7 @@ This document outlines the key features, installation, usage, and communication 
 - **API Parsing**: Load custom Lua APIs for auto-completion and type inference within the editor.
 - **Single Instance Control**: Ensures that only one instance of the application runs at a time using a lock file mechanism.
 - Good **Intellisense** and **autocompletion**, even for **unknown types** due to casting.
+- Recognition and auto-completion for singleton types and known variables.
 - **Function highlight** and description on the fly to see which parameters are required at runtime.
 - Highlight selected words via Control-Key + Mouse click and remove the highlight again via Control-Key and Mouse click.
 - Search/Replace
@@ -93,6 +94,7 @@ NOWALuaScript supports loading custom Lua API files to enhance the auto-completi
 
 Be formatted as a Lua table ending with .lua.
 Include class definitions, methods, and type information.
+
 Example API File:
 
 ```lua
@@ -173,7 +175,7 @@ return {
 	},
 	GameObjectController =
 	{
-		type = "class",
+		type = "singleton",
 		description = "The game object controller manages all game objects.",
 		childs = 
 		{
@@ -249,6 +251,17 @@ Scene1_barrel_0["onContactOnce"] = function(gameObject0, gameObject1, contact)
     contact = AppStateManager:getGameObjectController():castContact(contact)
 end
 ```
+
+If you want to have recognition for singleton types, set the name as type = "singleton" and start the name with a capital letter.
+See the NOWA_Api.lua example above.
+Then you can e.g. write:
+
+```lua
+App
+```
+If you have typed 3 letters starting with a capital letter, an intellisense will be opened and propose "AppStateManager". If you press the Tab- or Enter-Key the word will be auto-completed.
+The same is true for variables.
+
 Please do not do such ugly things like using several commands in one line, as the code will become unreadable and the intellisense confused:
 
 ```lua
