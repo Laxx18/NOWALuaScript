@@ -6,6 +6,7 @@
 #include <QUrl>
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
+#include <QDebug>
 
 LuaEditorModelItem::LuaEditorModelItem(QObject* parent)
     : QObject{parent},
@@ -156,7 +157,7 @@ QString LuaEditorModelItem::extractWordBeforeColon(const QString& currentText, i
         QChar currentChar = currentText[startPos];
 
         // Stop if a delimiter (":", "=", space, or line break) is found
-        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n')
+        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n' || currentChar == '(')
         {
             break;
         }
@@ -165,7 +166,7 @@ QString LuaEditorModelItem::extractWordBeforeColon(const QString& currentText, i
     }
 
     // Extract the word between the delimiter and the cursor position
-    QString wordBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1)).trimmed();
+    QString wordBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1));
 
     // Now handle case-sensitive class recognition
     // Remove "get" prefix and brackets if found
@@ -205,7 +206,7 @@ QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText,
         QChar currentChar = currentText[startPos];
 
         // Stop if a delimiter (":", "=", space, or line break) is found
-        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n')
+        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n' || currentChar == '(')
         {
             break;
         }
@@ -214,8 +215,7 @@ QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText,
     }
 
     // Extract the word between the delimiter and the cursor position
-    QString methodBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1)).trimmed();
-
+    QString methodBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1));
     // Find the position of the first opening bracket '('
     int bracketPos = methodBeforeColon.indexOf('(');
     if (bracketPos != -1)
@@ -245,6 +245,26 @@ QString LuaEditorModelItem::extractClassBeforeDot(const QString& currentText, in
 
     // Return empty if no match
     return QString();
+}
+
+bool LuaEditorModelItem::hasUnmatchedOpeningBracket(const QString& text)
+{
+    int openBracketCount = 0;
+    int closeBracketCount = 0;
+
+    for (QChar ch : text)
+    {
+        if (ch == '(')
+        {
+            openBracketCount++;
+        }
+        else if (ch == ')')
+        {
+            closeBracketCount++;
+        }
+    }
+
+    return openBracketCount > closeBracketCount;
 }
 
 void LuaEditorModelItem::detectVariables(void)
@@ -417,7 +437,13 @@ void LuaEditorModelItem::handleCastAssignment(const QString& statement, int line
         if (!varName.isEmpty() && !className.isEmpty())
         {
             // Assign the detected class name as the type for the variable
-            this->variableMap[varName] = LuaVariableInfo{varName, className, lineNumber, this->variableMap[varName].scope};
+            QString scope;
+            if (true == this->variableMap.contains(varName))
+            {
+                scope = this->variableMap[varName].scope;
+            }
+
+            this->variableMap[varName] = LuaVariableInfo{varName, className, lineNumber, scope};
         }
     }
 }
@@ -1026,11 +1052,11 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QSt
              {
                 // Connect the signal to the process method
                 QObject::connect(this->matchClassWorker, &MatchClassWorker::signal_requestProcess, this->matchClassWorker, &MatchClassWorker::process);
-                QObject::connect(this->matchClassWorker, &MatchClassWorker::signal_deliverData, this, [this](const QString& matchedClassName, const QString& matchedMethodName, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
+                QObject::connect(this->matchClassWorker, &MatchClassWorker::signal_deliverData, this, [this](const QString& currentText, const QString& matchedClassName, const QString& matchedMethodName, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
                     {
                         // Special case: If match class worker is finished with detecting variables etc. it delivers its data to the match method worker, which does work with the data
                         this->matchedClassName = matchedClassName;
-                        this->startMatchedFunctionProcessing(matchedMethodName, cursorPos, mouseX, mouseY);
+                        this->startMatchedFunctionProcessing(currentText, matchedMethodName, cursorPos, mouseX, mouseY, this->matchedClassName);
                     }, Qt::QueuedConnection);
                 this->matchClassWorker->process();
              });
@@ -1055,13 +1081,17 @@ void LuaEditorModelItem::closeIntellisense()
     ApiModel::instance()->closeIntellisense();
 }
 
-void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
+void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, const QString& deliveredMatchedClassName)
 {
     // If no matched class so far (e.g. user typed in the middle of the line '(', so first intellisense must be processed
-    if (true == this->matchedClassName.isEmpty())
+    if (true == this->matchedClassName.isEmpty() && true == deliveredMatchedClassName.isEmpty())
     {
         // Start for matchedFunction (true flag, so that no intellisense will be shown)
         this->startIntellisenseProcessing(false, this->content, "", cursorPos, mouseY, mouseY, true);
+    }
+    else if (false == deliveredMatchedClassName.isEmpty())
+    {
+        this->matchedClassName = deliveredMatchedClassName;
     }
 
     // If there's already a worker, interrupt its process
@@ -1073,11 +1103,11 @@ void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& textAfter
         // if intelliseSense processing prior started, there is so far no typed text after keyword, but in the past it has been already set for the method worker, so is it in this special case
         if (true == textAfterKeyword.isEmpty())
         {
-            this->matchMethodWorker->setParameters(this->matchedClassName, this->matchMethodWorker->getTypedAfterKeyword(), cursorPos, mouseX, mouseY);
+            this->matchMethodWorker->setParameters(this->matchedClassName, currentText, this->matchMethodWorker->getTypedAfterKeyword(), cursorPos, mouseX, mouseY);
         }
         else
         {
-             this->matchMethodWorker->setParameters(this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
+             this->matchMethodWorker->setParameters(this->matchedClassName, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
         }
 
         if (!textAfterKeyword.endsWith('.') && !textAfterKeyword.endsWith(':'))
@@ -1089,13 +1119,18 @@ void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& textAfter
     else
     {
         // Create a new worker instance
-        this->matchMethodWorker = new MatchMethodWorker(this, this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
+        this->matchMethodWorker = new MatchMethodWorker(this, currentText, this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
 
         // Create and start a new thread for processing
         this->matchMethodThread = QThread::create([this]
                                            {
                                                // Connect the signal to the process method
                                                QObject::connect(this->matchMethodWorker, &MatchMethodWorker::signal_requestProcess, this->matchMethodWorker, &MatchMethodWorker::process);
+                                               QObject::connect(this->matchMethodWorker, &MatchMethodWorker::signal_classNameRequired, this, [this](const QString& currentText, const QString& textAfterKeyword,
+                                                                                                                                                    int cursorPos, int mouseX, int mouseY)
+                                                                {
+                                                                    this->startIntellisenseProcessing(false, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
+                                                                }, Qt::QueuedConnection);
                                                this->matchMethodWorker->process();
                                            });
 

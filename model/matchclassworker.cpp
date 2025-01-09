@@ -49,7 +49,7 @@ void MatchClassWorker::process(void)
         if (!ApiModel::instance()->getIsIntellisenseShown() && this->typedAfterKeyword.isEmpty())
         {
             // Extract text from the start up to the cursor position
-            QString textBeforeCursor = this->currentText.left(this->cursorPosition);
+            QString textBeforeCursor = this->currentText.left(this->cursorPosition + 1);
 
             // Check if we should stop before processing further
             if (this->isStopped)
@@ -98,19 +98,23 @@ void MatchClassWorker::process(void)
         }
     }
 
-    QString matchedMethodName;
+    QString oldMatchedClassName = this->matchedClassName;
+    QString matchedMethodName = this->handleMethods();
+
+    if (this->matchedClassName != oldMatchedClassName)
+    {
+        ApiModel::instance()->setSelectedClassName(this->matchedClassName);
+    }
 
     // Only re-match variables if the menu is not shown and user is not typing something after colon, because else the auto completion would not work, because each time variables would be re-detected
     // But user typed already the next expression, which would no more match!
-    if (!ApiModel::instance()->getIsIntellisenseShown() && this->typedAfterKeyword.isEmpty())
+    if (!ApiModel::instance()->getIsIntellisenseShown() && (true == this->typedAfterKeyword.isEmpty() || true == this->matchedClassName.isEmpty()))
     {
         if (false == this->forConstant)
         {
-            matchedMethodName = this->handleMethods();
-
             if (false == this->matchedClassName.isEmpty())
             {
-                Q_EMIT signal_deliverData(this->matchedClassName, matchedMethodName, this->typedAfterKeyword, this->cursorPosition, this->mouseX, this->mouseY);
+                Q_EMIT signal_deliverData(this->currentText, this->matchedClassName, matchedMethodName, this->typedAfterKeyword, this->cursorPosition, this->mouseX, this->mouseY);
             }
 
             // Check if we should stop before triggering the menu
@@ -175,7 +179,7 @@ QString MatchClassWorker::handleMethods(void)
     }
 
     QString matchedPostIdentifier;
-    QString matchedPostMethodName = this->luaEditorModelItem->extractMethodBeforeColon(textBeforeCursor, this->cursorPosition);
+    QString matchedPostName = this->luaEditorModelItem->extractMethodBeforeColon(textBeforeCursor, this->cursorPosition);
 
     int lastNewlineIndex = textBeforeCursor.lastIndexOf('\n', this->cursorPosition - 1);
 
@@ -185,6 +189,7 @@ QString MatchClassWorker::handleMethods(void)
     int lineIndex = textUpToCursor.count('\n') + 1;
 
     QString currentLine = currentText.left(cursorPosition).section('\n', -1).trimmed();
+
     QRegularExpression firstWordRegex(R"((\w+):)");
     QRegularExpressionMatch firstWordMatch = firstWordRegex.match(currentLine);
 
@@ -208,11 +213,30 @@ QString MatchClassWorker::handleMethods(void)
 
     // Remove any non-identifier characters from the beginning of the strings
     matchedPostIdentifier.remove(trimmer);
-    matchedPostMethodName.remove(trimmer);
+    matchedPostName.remove(trimmer);
 
     if (true == matchedPostIdentifier.isEmpty())
     {
         matchedPostIdentifier = matchedCurrentIdentifier;
+    }
+
+    // Special case:
+    // currentLine = 'gameObjectTitleComponent:setCaption(energy'
+    // matchedPostIdentifier = gameObjectTitleComponent
+    // matchedPostName = energy
+    // Cursorpos: at end of currentLine
+    // Checks whether matchedPostIdentifier or matchedPostName are closer to cursorPos to get the priority, which post word to investigate further
+    int identifierPos = currentLine.indexOf(matchedPostIdentifier);
+    int methodNamePos = currentLine.indexOf(matchedPostName);
+
+    // Calculate distance from cursor
+    int distanceToIdentifier = (identifierPos != -1) ? qAbs(cursorPosition - (identifierPos + matchedPostIdentifier.length())) : INT_MAX;
+    int distanceToMethodName = (methodNamePos != -1) ? qAbs(cursorPosition - (methodNamePos + matchedPostName.length())) : INT_MAX;
+
+    // Determine which is closer
+    if (distanceToMethodName < distanceToIdentifier)
+    {
+        matchedPostIdentifier = matchedPostName;
     }
 
     const auto& luaVariableInfo = this->luaEditorModelItem->getClassForVariableName(matchedPostIdentifier);
@@ -241,7 +265,7 @@ QString MatchClassWorker::handleMethods(void)
     }
     else
     {
-        // No variable info found, take prior color into account
+        // No variable info found, take prior colon into account
 
         // Find the last newline before the cursor position
         int lastNewlineIndex = textBeforeCursor.lastIndexOf('\n', this->cursorPosition - 1);
@@ -269,12 +293,12 @@ QString MatchClassWorker::handleMethods(void)
             if (true == resultClassName.isEmpty())
             {
                 // Handling this case: otherGameObject:getAiFlockingComponent():getOwner(): -> to get GameObject which is the owner, determined by AiFlockingComponent and then the return type of the Method getOwner
-                resultClassName = ApiModel::instance()->getClassForMethodName(matchedPreIdentifier, matchedPostMethodName);
+                resultClassName = ApiModel::instance()->getClassForMethodName(matchedPreIdentifier, matchedPostName);
                 if ("void" == resultClassName || "string" == resultClassName || "number" == resultClassName || "boolean" == resultClassName)
                 {
                     return "";
                 }
-                matchedMethodName = matchedPostMethodName;
+                matchedMethodName = matchedPostName;
             }
             else if (false == ApiModel::instance()->isValidMethodName(matchedPreIdentifier, matchedMethodName))
             {

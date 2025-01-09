@@ -288,10 +288,10 @@ QString ApiModel::getSelectedClassName() const
 
 void ApiModel::setSelectedClassName(const QString& selectedClassName)
 {
-    // if (this->selectedClassName == selectedClassName)
-    // {
-    //     return;
-    // }
+    if (this->selectedClassName == selectedClassName)
+    {
+        return;
+    }
     this->selectedClassName = selectedClassName;
 
     bool hasUpdated = false;
@@ -362,7 +362,7 @@ void ApiModel::processMatchedMethodsForSelectedClass(const QString& selectedClas
 {
     this->methodsForSelectedClass.clear();
 
-    if (typedAfterColon.size() >= 3)
+    // if (typedAfterColon.size() >= 3)
     {
         // Get all methods for the currently selected class
         const auto& methods = this->getMethodsForClassName(selectedClassName);
@@ -424,7 +424,7 @@ void ApiModel::processMatchedConstantsForSelectedClass(const QString& selectedCl
     this->constantsForSelectedClass.clear();
 
     // Only process if typedAfterKeyword has a sufficient length
-    if (typedAfterKeyword.size() >= 3)
+    // if (typedAfterKeyword.size() >= 3)
     {
         // Get all constants for the currently selected class
         const auto& constants = this->getConstantsForClassName(selectedClassName);

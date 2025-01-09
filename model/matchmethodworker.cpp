@@ -4,9 +4,10 @@
 
 #include <QDebug>
 
-MatchMethodWorker::MatchMethodWorker(LuaEditorModelItem* luaEditorModelItem, const QString& matchedClassName, const QString& typedAfterColon, int cursorPosition, int mouseX, int mouseY)
+MatchMethodWorker::MatchMethodWorker(LuaEditorModelItem* luaEditorModelItem, const QString& currentText, const QString& matchedClassName, const QString& typedAfterColon, int cursorPosition, int mouseX, int mouseY)
     : luaEditorModelItem(luaEditorModelItem),
     matchedClassName(matchedClassName),
+    currentText(currentText),
     typedAfterKeyword(typedAfterColon),
     cursorPosition(cursorPosition),
     mouseX(mouseX),
@@ -17,9 +18,10 @@ MatchMethodWorker::MatchMethodWorker(LuaEditorModelItem* luaEditorModelItem, con
 
 }
 
-void MatchMethodWorker::setParameters(const QString& matchedClassName, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY)
+void MatchMethodWorker::setParameters(const QString& matchedClassName, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY)
 {
     this->matchedClassName = matchedClassName;
+    this->currentText = currentText;
     this->typedAfterKeyword = textAfterColon;
     this->cursorPosition = cursorPos;
     this->mouseX = mouseX;
@@ -49,18 +51,29 @@ void MatchMethodWorker::process(void)
         trimmedMethodName = trimmedMethodName.left(bracketIndex);
     }
 
+    if (true == trimmedMethodName.isEmpty())
+    {
+        this->isProcessing = false;
+        QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter", Qt::QueuedConnection);
+        return;
+    }
+
     // Get the method details from ApiModel
     const auto& methodDetails = ApiModel::instance()->getMethodDetails(this->matchedClassName, trimmedMethodName);
 
     if (true == methodDetails.isEmpty())
     {
+        // ApiModel::instance()->closeIntellisense();
+        // this->luaEditorModelItem->startIntellisenseProcessing(false, this->currentText, trimmedMethodName, this->cursorPosition, this->mouseX, this->mouseY, true);
+        // Q_EMIT signal_classNameRequired( this->currentText, trimmedMethodName, this->cursorPosition, this->mouseX, this->mouseY);
+        // this->typedAfterKeyword.clear();
         this->isProcessing = false;
-        QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter",
-                                  Qt::QueuedConnection);
+        // QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter", Qt::QueuedConnection);
     }
 
     if (!methodDetails.isEmpty() && !this->isStopped)
     {
+        ApiModel::instance()->closeIntellisense();
         ApiModel::instance()->showMatchedFunctionMenu(this->mouseX, this->mouseY);
 
         QString returns = methodDetails["returns"].toString();

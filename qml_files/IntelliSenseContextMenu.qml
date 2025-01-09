@@ -394,7 +394,14 @@ Rectangle
                                     // For example, you can open a detailed view or perform an action.
                                     root.visible = false;
                                     NOWAApiModel.isIntellisenseShown = false;
-                                    NOWALuaEditorModel.sendTextToEditor(modelData.name);
+                                    if (p.resultType == "forClass" || p.resultType == "forConstant")
+                                    {
+                                        NOWALuaEditorModel.sendTextToEditor(modelData.name);
+                                    }
+                                    else if (p.resultType == "forVariable")
+                                    {
+                                        NOWALuaEditorModel.sendVariableTextToEditor(modelData.name);
+                                    }
                                 }
                                 else
                                 {
@@ -465,7 +472,7 @@ Rectangle
         let availableSpaceBelow = pHeight - y; // Space below the cursor's y position
 
         // Adjust logic to prioritize showing above when close to bottom
-        if (availableSpaceBelow < rHeight || availableSpaceBelow < 1.5 * rHeight)
+        if (availableSpaceBelow < rHeight || availableSpaceBelow < 2 * rHeight)
         {
             // Show above if not enough space below or if close to bottom
             root.y = Math.max(0, y - rHeight) - 30;

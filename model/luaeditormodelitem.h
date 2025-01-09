@@ -69,6 +69,8 @@ public:
 
     QString extractClassBeforeDot(const QString& currentText, int cursorPosition);
 
+    bool hasUnmatchedOpeningBracket(const QString& text);
+
     void detectVariables(void);
 
     void detectConstants(void);
@@ -88,7 +90,7 @@ public slots:
 
     void startMatchedVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY);
 
-    void startMatchedFunctionProcessing(const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
+    void startMatchedFunctionProcessing(const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, const QString& deliveredMatchedClassName = "");
 
     void closeMatchedFunction();
 Q_SIGNALS:

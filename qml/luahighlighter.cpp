@@ -304,15 +304,15 @@ void LuaHighlighter::insertSentText(int sizeToReplace, const QString& text)
     int lastDotPos = blockText.lastIndexOf('.');
     int contextStartPos = qMax(lastColonPos, lastDotPos);
 
-    // if (contextStartPos != -1)
-    // {
-    //     // Calculate the length after the last colon or dot
-    //     int charactersToReplace = blockText.length() - contextStartPos - 1;
+    if (contextStartPos != -1)
+    {
+        // Calculate the length after the last colon or dot
+        int charactersToReplace = blockText.length() - contextStartPos - 1;
 
-    //     // Move cursor to replace only the part after `:` or `.`
-    //     cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, charactersToReplace);
-    // }
-    // else
+        // Move cursor to replace only the part after `:` or `.`
+        cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, charactersToReplace);
+    }
+    else
     {
         // Fallback to sizeToReplace if no colon or dot is detected
         cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, sizeToReplace);
@@ -320,6 +320,9 @@ void LuaHighlighter::insertSentText(int sizeToReplace, const QString& text)
 
     // Replace selected text with the new auto-completed text
     cursor.insertText(text);
+
+    // For testing the new text
+    // QString newBlockText = cursor.block().text();
 
     // Update the editor cursor
     this->cursor = cursor;  // Update the cursor after the replacement

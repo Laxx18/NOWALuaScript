@@ -61,7 +61,7 @@ Q_SIGNALS:
 
     void requestCloseIntellisense();
 
-    void requestMatchedFunctionContextMenu(const QString& textAfterColon, int cursorPos, int mouseX, int mouseY);
+    void requestMatchedFunctionContextMenu(const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY, const QString& deliveredMatchedFunctionName = "");
     void requestCloseMatchedFunctionContextMenu();
 
     void signal_insertingNewLine(bool inserting);
@@ -88,6 +88,8 @@ private:
     void processBracket(QChar keyword);
 
     void processVariableBeingTyped(const QString& currentText, int cursorPosition, QChar keyword);
+
+    void processFunctionBeingTyped(const QString& currentText, int cursorPosition, QChar keyword);
 private:
     LuaEditorModelItem* luaEditorModelItem;
     QQuickItem* lineNumbersEdit;

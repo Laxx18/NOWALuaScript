@@ -344,7 +344,7 @@ LuaEditorQml
     Timer
     {
         id: checkSyntaxTimer;
-        interval: 2000;
+        interval: 1000;
         repeat: false;
         onTriggered:
         {

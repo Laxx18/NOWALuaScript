@@ -104,7 +104,7 @@ MenuBar
 
     Menu
     {
-        title: qsTr("File");
+        title: qsTr("   File   ");
 
         Action
         {
@@ -134,7 +134,7 @@ MenuBar
 
     Menu
     {
-        title: qsTr("Edit");
+        title: qsTr("   Edit   ");
 
         Action
         {
@@ -223,7 +223,7 @@ MenuBar
 
     Menu
     {
-        title: qsTr("Lua");
+        title: qsTr("   Lua   ");
 
         Action
         {
@@ -252,7 +252,7 @@ MenuBar
 
     Menu
     {
-        title: qsTr("Help");
+        title: qsTr("   Help   ");
 
         Action
         {

@@ -23,7 +23,7 @@ Q_SIGNALS:
 
     void signal_requestProcess();
 
-    void signal_deliverData(const QString& matchedClassName, const QString& matchedMethodName, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
+    void signal_deliverData(const QString& currentText, const QString& matchedClassName, const QString& matchedMethodName, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
 private:
     QString handleMethods(void);
 
