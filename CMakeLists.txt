@@ -63,8 +63,6 @@ qt_add_qml_module(NOWALuaScript
         model/luaeditormodel.h model/luaeditormodel.cpp
         model/apimodel.h model/apimodel.cpp
         model/matchclassworker.h model/matchclassworker.cpp
-        model/matchmethodworker.h model/matchmethodworker.cpp
-        model/matchvariablesworker.h model/matchvariablesworker.cpp
         qml/luaeditorqml.h qml/luaeditorqml.cpp
         qml/luahighlighter.h qml/luahighlighter.cpp
         luascriptadapter.h luascriptadapter.cpp

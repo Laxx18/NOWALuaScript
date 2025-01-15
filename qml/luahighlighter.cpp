@@ -299,24 +299,7 @@ void LuaHighlighter::insertSentText(int sizeToReplace, const QString& text)
     // Ensure we have the correct text context
     QString blockText = cursor.block().text();
 
-    // Identify the last context delimiter (colon or dot)
-    int lastColonPos = blockText.lastIndexOf(':');
-    int lastDotPos = blockText.lastIndexOf('.');
-    int contextStartPos = qMax(lastColonPos, lastDotPos);
-
-    if (contextStartPos != -1)
-    {
-        // Calculate the length after the last colon or dot
-        int charactersToReplace = blockText.length() - contextStartPos - 1;
-
-        // Move cursor to replace only the part after `:` or `.`
-        cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, charactersToReplace);
-    }
-    else
-    {
-        // Fallback to sizeToReplace if no colon or dot is detected
-        cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, sizeToReplace);
-    }
+    cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, sizeToReplace);
 
     // Replace selected text with the new auto-completed text
     cursor.insertText(text);

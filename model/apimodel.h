@@ -128,6 +128,10 @@ public:
 
     void setMatchedVariables(const QVariantMap& matchedVariables);
 
+    QVariantList getMethodsForClassName(const QString& className);
+
+    QVariantList getConstantsForClassName(const QString& className);
+
 Q_SIGNALS:
     void selectedClassNameChanged();
 
@@ -172,10 +176,6 @@ private:
     bool updateMethodsForSelectedClass(); // Helper function to update methods
 
     bool updateConstantsForSelectedClass(); // Helper function to update methods
-
-    QVariantList getMethodsForClassName(const QString& className);
-
-    QVariantList getConstantsForClassName(const QString& className);
 private:
     QMap<QString, LuaScriptAdapter::ClassData> apiData;
     QString selectedClassName;

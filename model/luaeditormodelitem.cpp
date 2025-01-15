@@ -14,10 +14,6 @@ LuaEditorModelItem::LuaEditorModelItem(QObject* parent)
     firstTimeContent(true),
     matchClassWorker(Q_NULLPTR),
     matchClassThread(Q_NULLPTR),
-    matchMethodWorker(Q_NULLPTR),
-    matchMethodThread(Q_NULLPTR),
-    matchVariablesWorker(Q_NULLPTR),
-    matchVariablesThread(Q_NULLPTR),
     printToConsole(false)
 {
 
@@ -1029,7 +1025,12 @@ QVariantMap LuaEditorModelItem::processMatchedVariables(bool forSingleton, const
     return matchedVariables;
 }
 
-void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu)
+QMap<QString, LuaEditorModelItem::LuaVariableInfo> LuaEditorModelItem::getVariableMap(void) const
+{
+    return this->variableMap;
+}
+
+void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, bool forFunctionParameters, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
 {
     // If there's already a worker, interrupt its process
     if (Q_NULLPTR != this->matchClassWorker)
@@ -1037,7 +1038,7 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QSt
         // Stop the ongoing process
         this->matchClassWorker->stopProcessing();
 
-        this->matchClassWorker->setParameters(forConstant, currentText, textAfterKeyword, cursorPos, mouseX, mouseY, forMatchedFunctionMenu);
+        this->matchClassWorker->setParameters(forConstant, forFunctionParameters, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
 
         // Emit a request to process in the worker thread
         Q_EMIT this->matchClassWorker->signal_requestProcess();
@@ -1045,19 +1046,13 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QSt
     else
     {
         // Create a new worker instance
-        this->matchClassWorker = new MatchClassWorker(this, forConstant, currentText, textAfterKeyword, cursorPos, mouseX, mouseY, forMatchedFunctionMenu);
+        this->matchClassWorker = new MatchClassWorker(this, forConstant, forFunctionParameters, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
 
         // Create and start a new thread for processing
         this->matchClassThread = QThread::create([this]
              {
                 // Connect the signal to the process method
                 QObject::connect(this->matchClassWorker, &MatchClassWorker::signal_requestProcess, this->matchClassWorker, &MatchClassWorker::process);
-                QObject::connect(this->matchClassWorker, &MatchClassWorker::signal_deliverData, this, [this](const QString& currentText, const QString& matchedClassName, const QString& matchedMethodName, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
-                    {
-                        // Special case: If match class worker is finished with detecting variables etc. it delivers its data to the match method worker, which does work with the data
-                        this->matchedClassName = matchedClassName;
-                        this->startMatchedFunctionProcessing(currentText, matchedMethodName, cursorPos, mouseX, mouseY, this->matchedClassName);
-                    }, Qt::QueuedConnection);
                 this->matchClassWorker->process();
              });
 
@@ -1079,123 +1074,6 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, const QSt
 void LuaEditorModelItem::closeIntellisense()
 {
     ApiModel::instance()->closeIntellisense();
-}
-
-void LuaEditorModelItem::startMatchedFunctionProcessing(const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, const QString& deliveredMatchedClassName)
-{
-    // If no matched class so far (e.g. user typed in the middle of the line '(', so first intellisense must be processed
-    if (true == this->matchedClassName.isEmpty() && true == deliveredMatchedClassName.isEmpty())
-    {
-        // Start for matchedFunction (true flag, so that no intellisense will be shown)
-        this->startIntellisenseProcessing(false, this->content, "", cursorPos, mouseY, mouseY, true);
-    }
-    else if (false == deliveredMatchedClassName.isEmpty())
-    {
-        this->matchedClassName = deliveredMatchedClassName;
-    }
-
-    // If there's already a worker, interrupt its process
-    if (Q_NULLPTR != this->matchMethodWorker)
-    {
-        // Stop the ongoing process
-        this->matchMethodWorker->stopProcessing();
-
-        // if intelliseSense processing prior started, there is so far no typed text after keyword, but in the past it has been already set for the method worker, so is it in this special case
-        if (true == textAfterKeyword.isEmpty())
-        {
-            this->matchMethodWorker->setParameters(this->matchedClassName, currentText, this->matchMethodWorker->getTypedAfterKeyword(), cursorPos, mouseX, mouseY);
-        }
-        else
-        {
-             this->matchMethodWorker->setParameters(this->matchedClassName, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
-        }
-
-        if (!textAfterKeyword.endsWith('.') && !textAfterKeyword.endsWith(':'))
-        {
-            // Emit a request to process in the worker thread
-            Q_EMIT this->matchMethodWorker->signal_requestProcess();
-        }
-    }
-    else
-    {
-        // Create a new worker instance
-        this->matchMethodWorker = new MatchMethodWorker(this, currentText, this->matchedClassName, textAfterKeyword, cursorPos, mouseX, mouseY);
-
-        // Create and start a new thread for processing
-        this->matchMethodThread = QThread::create([this]
-                                           {
-                                               // Connect the signal to the process method
-                                               QObject::connect(this->matchMethodWorker, &MatchMethodWorker::signal_requestProcess, this->matchMethodWorker, &MatchMethodWorker::process);
-                                               QObject::connect(this->matchMethodWorker, &MatchMethodWorker::signal_classNameRequired, this, [this](const QString& currentText, const QString& textAfterKeyword,
-                                                                                                                                                    int cursorPos, int mouseX, int mouseY)
-                                                                {
-                                                                    this->startIntellisenseProcessing(false, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
-                                                                }, Qt::QueuedConnection);
-                                               this->matchMethodWorker->process();
-                                           });
-
-        QObject::connect(matchMethodWorker, &MatchMethodWorker::finished, this, [this]() {
-            // Cleanup and reset when finished
-            delete matchMethodWorker; // Delete the worker instance when done
-            matchMethodWorker = Q_NULLPTR; // Reset the worker pointer
-            this->matchMethodThread->quit();  // Quit the thread
-        });
-
-        QObject::connect(matchMethodWorker, &MatchMethodWorker::finished, matchMethodWorker, &MatchMethodWorker::deleteLater);
-        QObject::connect(this->matchMethodThread, &QThread::finished, this->matchMethodThread, &QThread::deleteLater);
-
-        // Start processing
-        this->matchMethodThread->start();
-    }
-}
-
-void LuaEditorModelItem::startMatchedVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY)
-{
-    // If no matched class so far (e.g. user typed in the middle of the line '(', so first intellisense must be processed
-    if (text.size() >= 3)
-    {
-        // Start for matchedFunction (true flag, so that no intellisense will be shown)
-        ApiModel::instance()->closeIntellisense();
-        ApiModel::instance()->closeMatchedFunction();
-    }
-
-    // If there's already a worker, interrupt its process
-    if (Q_NULLPTR != this->matchVariablesWorker)
-    {
-        // Stop the ongoing process
-        this->matchVariablesWorker->stopProcessing();
-
-        this->matchVariablesWorker->setParameters(forSingleton, text, cursorPos, mouseX, mouseY);
-
-        // Emit a request to process in the worker thread
-        Q_EMIT this->matchVariablesWorker->signal_requestProcess();
-    }
-    else
-    {
-        // Create a new worker instance
-        this->matchVariablesWorker = new MatchVariablesWorker(this, forSingleton, text, cursorPos, mouseX, mouseY);
-
-        // Create and start a new thread for processing
-        this->matchVariablesThread = QThread::create([this]
-                                                     {
-                                                         // Connect the signal to the process method
-                                                         QObject::connect(this->matchVariablesWorker, &MatchVariablesWorker::signal_requestProcess, this->matchVariablesWorker, &MatchVariablesWorker::process);
-                                                         this->matchVariablesWorker->process();
-                                                     });
-
-        QObject::connect(this->matchVariablesWorker, &MatchVariablesWorker::finished, this, [this]() {
-            // Cleanup and reset when finished
-            delete this->matchVariablesWorker; // Delete the worker instance when done
-            this->matchVariablesWorker = Q_NULLPTR; // Reset the worker pointer
-            this->matchClassThread->quit();  // Quit the thread
-        });
-
-        QObject::connect(this->matchVariablesWorker, &MatchVariablesWorker::finished, this->matchVariablesWorker, &MatchVariablesWorker::deleteLater);
-        QObject::connect(this->matchVariablesThread, &QThread::finished, this->matchVariablesThread, &QThread::deleteLater);
-
-        // Start processing
-        this->matchVariablesThread->start();
-    }
 }
 
 void LuaEditorModelItem::closeMatchedFunction()

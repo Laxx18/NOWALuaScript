@@ -4,30 +4,34 @@
 
 #include <QRegularExpression>
 
-MatchClassWorker::MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool forConstant, const QString& currentText,  const QString& textAfterKeyword, int cursorPosition, int mouseX, int mouseY, bool forMatchedFunctionMenu)
+MatchClassWorker::MatchClassWorker(LuaEditorModelItem* luaEditorModelItem, bool forConstant, bool forFunctionParameters, const QString& currentText,  const QString& textAfterKeyword, int cursorPosition, int mouseX, int mouseY)
     : luaEditorModelItem(luaEditorModelItem),
     currentText(currentText),
     forConstant(forConstant),
+    forFunctionParameters(forFunctionParameters),
     typedAfterKeyword(textAfterKeyword),
     cursorPosition(cursorPosition),
+    oldCursorPosition(cursorPosition),
     mouseX(mouseX),
     mouseY(mouseY),
-    forMatchedFunctionMenu(forMatchedFunctionMenu),
     isProcessing(false),
-    isStopped(true)
+    isStopped(true),
+    forVariable(true),
+    variableFound(false)
 {
 
 }
 
-void MatchClassWorker::setParameters(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu)
+void MatchClassWorker::setParameters(bool forConstant, bool forFunctionParameters, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
 {
     this->forConstant = forConstant;
+    this->forFunctionParameters = forFunctionParameters;
     this->currentText = currentText;
     this->typedAfterKeyword = textAfterKeyword;
+    this->oldCursorPosition = this->cursorPosition;
     this->cursorPosition = cursorPos;
     this->mouseX = mouseX;
     this->mouseY = mouseY;
-    this->forMatchedFunctionMenu = forMatchedFunctionMenu;
 }
 
 void MatchClassWorker::stopProcessing(void)
@@ -44,103 +48,70 @@ void MatchClassWorker::process(void)
     // Set the content for processing
     this->luaEditorModelItem->setContent(this->currentText);
 
-    if (true == this->forConstant)
-    {
-        if (!ApiModel::instance()->getIsIntellisenseShown() && this->typedAfterKeyword.isEmpty())
-        {
-            // Extract text from the start up to the cursor position
-            QString textBeforeCursor = this->currentText.left(this->cursorPosition + 1);
-
-            // Check if we should stop before processing further
-            if (this->isStopped)
-            {
-                this->isProcessing = false; // Reset the flag before exiting
-                return; // Exit if stopping
-            }
-
-            bool validIdentifier = false;
-            QString matchedIdentifier = this->luaEditorModelItem->extractClassBeforeDot(textBeforeCursor, this->cursorPosition);
-
-            if (false == matchedIdentifier.isEmpty() && true == ApiModel::instance()->isValidClassName(matchedIdentifier))
-            {
-                this->matchedClassName = matchedIdentifier;
-                validIdentifier = true;
-            }
-            else
-            {
-                // Nothing matched, so maybe the dot is called for a function, not for a class. Handle that case
-                this->handleMethods();
-
-                matchedIdentifier = this->matchedClassName;
-                if (false == matchedIdentifier.isEmpty() && true == ApiModel::instance()->isValidClassName(matchedIdentifier))
-                {
-                    validIdentifier = true;
-                }
-            }
-
-            if (true == validIdentifier)
-            {
-                this->handleConstantsResults();
-                return;
-            }
-            else
-            {
-                this->isProcessing = false;
-                return;
-            }
-        }
-
-        // Check if we should stop before processing matched methods
-        if (!this->typedAfterKeyword.isEmpty())
-        {
-            this->handleConstantsResults();
-            return;
-        }
-    }
-
     QString oldMatchedClassName = this->matchedClassName;
-    QString matchedMethodName = this->handleMethods();
 
-    if (this->matchedClassName != oldMatchedClassName)
+    bool handleOuterSegment = true;
+    this->handleCurrentLine("", handleOuterSegment);
+
+    if (this->matchedClassName != oldMatchedClassName/* && false == oldMatchedClassName.isEmpty()*/)
     {
         ApiModel::instance()->setSelectedClassName(this->matchedClassName);
     }
 
+    // Checks if a new variable or singleton Name is being typed, if there is no matched class name so far
+    if (this->restTyped.size() > 2 && true == this->forVariable)
+    {
+        QChar startChar = this->restTyped.at(0);
+        bool forSingleton = startChar.isUpper();
+        QVariantMap variablesMap = this->luaEditorModelItem->processMatchedVariables(forSingleton, this->restTyped);
+        if (false == variablesMap.empty())
+        {
+            ApiModel::instance()->setMatchedVariables(variablesMap);
+
+            if (false == variablesMap.empty())
+            {
+                this->variableFound = true;
+                // Emit signal directly since the data structure has already been updated
+                Q_EMIT ApiModel::instance()->signal_showIntelliSenseMenu("forVariable", mouseX, mouseY);
+                this->isProcessing = false;
+                return;
+            }
+            else
+            {
+                this->variableFound = false;
+                this->forVariable = false;
+                bool handleOuterSegment = true;
+                this->handleCurrentLine("", handleOuterSegment);
+            }
+        }
+    }
+
+    this->forVariable = true;
+
     // Only re-match variables if the menu is not shown and user is not typing something after colon, because else the auto completion would not work, because each time variables would be re-detected
     // But user typed already the next expression, which would no more match!
-    if (!ApiModel::instance()->getIsIntellisenseShown() && (true == this->typedAfterKeyword.isEmpty() || true == this->matchedClassName.isEmpty()))
+    if (!ApiModel::instance()->getIsIntellisenseShown() && (true == this->forFunctionParameters || false == this->typedInsideFunction.isEmpty()))
     {
-        if (false == this->forConstant)
+        if (false == this->matchedClassName.isEmpty() && false == this->matchedMethodName.isEmpty())
         {
-            if (false == this->matchedClassName.isEmpty())
+            if (true == this->forFunctionParameters)
             {
-                Q_EMIT signal_deliverData(this->currentText, this->matchedClassName, matchedMethodName, this->typedAfterKeyword, this->cursorPosition, this->mouseX, this->mouseY);
+                if (true == this->handleInsideFunctionParameters())
+                {
+                    // Check if we should stop before triggering the menu
+                    if (this->isStopped)
+                    {
+                        this->isProcessing = false; // Reset the flag before exiting
+                        return; // Exit if stopping
+                    }
+                    return;
+                }
             }
-
-            // Check if we should stop before triggering the menu
-            if (this->isStopped)
-            {
-                this->isProcessing = false; // Reset the flag before exiting
-                return; // Exit if stopping
-            }
-
-            // Now trigger a method that opens the context menu in QML with the methods
-            if (false == this->matchedClassName.isEmpty() && false == this->forMatchedFunctionMenu)
-            {
-                ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
-            }
-            this->forMatchedFunctionMenu = false;
-            return;
-        }
-        else
-        {
-            this->isProcessing = false;
-            return;
         }
     }
 
     // Check if we should stop before processing matched methods
-    if (!this->typedAfterKeyword.isEmpty() && false == this->forConstant)
+    if (!this->typedAfterKeyword.isEmpty())
     {
         // Ensure we check again for stop condition
         if (this->isStopped)
@@ -149,216 +120,549 @@ void MatchClassWorker::process(void)
             return; // Exit if stopping
         }
 
-        ApiModel::instance()->processMatchedMethodsForSelectedClass(this->matchedClassName, this->typedAfterKeyword);
+        // Removes any proceeding ":", "."
+        QString cleanTypedAfterKeyword = this->typedAfterKeyword;
+        cleanTypedAfterKeyword.remove(QRegularExpression(R"([():.\s])"));
+        if (false == this->forConstant)
+        {
+            ApiModel::instance()->processMatchedMethodsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
+            ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
+        }
+        else
+        {
+            ApiModel::instance()->processMatchedConstantsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
+            ApiModel::instance()->showIntelliSenseMenu("forConstant", this->matchedClassName, mouseX, mouseY);
+        }
         this->typedAfterKeyword.clear();
-
-        // Emit signal directly since the data structure has already been updated
-        Q_EMIT ApiModel::instance()->signal_showIntelliSenseMenu("forClass", mouseX, mouseY);
     }
 
     // Reset the processing flag before exiting
     this->isProcessing = false;
 }
 
-QString MatchClassWorker::handleMethods(void)
+QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handleOuterSegment)
 {
-    QString matchedMethodName;
-
-    QRegularExpression trimmer(R"(^[^\w]+)");
-
-    this->luaEditorModelItem->detectVariables();
-
-    // Extract text from the start up to the cursor position
-    QString textBeforeCursor = this->currentText.left(this->cursorPosition);
-
-    // Check if we should stop before processing further
-    if (this->isStopped)
+    if (true == segment.isEmpty())
     {
-        this->isProcessing = false; // Reset the flag before exiting
-        return matchedMethodName; // Exit if stopping
+        this->restTyped.clear();
+        this->matchedClassName.clear();
+        this->matchedMethodName.clear();
     }
 
-    QString matchedPostIdentifier;
-    QString matchedPostName = this->luaEditorModelItem->extractMethodBeforeColon(textBeforeCursor, this->cursorPosition);
-
-    int lastNewlineIndex = textBeforeCursor.lastIndexOf('\n', this->cursorPosition - 1);
-
-    QString textUpToCursor = currentText.left(cursorPosition);
-
-    // Count the number of '\n' in the substring
-    int lineIndex = textUpToCursor.count('\n') + 1;
-
-    QString currentLine = currentText.left(cursorPosition).section('\n', -1).trimmed();
-
-    QRegularExpression firstWordRegex(R"((\w+):)");
-    QRegularExpressionMatch firstWordMatch = firstWordRegex.match(currentLine);
-
-    if (firstWordMatch.hasMatch())
+    if (std::abs(this->cursorPosition - this->oldCursorPosition) > 1 || false == this->luaEditorModelItem->hasVariablesDetected())
     {
-        matchedPostIdentifier = firstWordMatch.captured(1); // Extract the first word before the colon
+        this->luaEditorModelItem->detectVariables();
     }
 
-    // Special case:
-    // physicsActiveComponent:applyForce(Vector3.UNIT_Y * 200);
-    // typed:
-    // physicsActiveComponent:applyForce(Vector3: * 200);
-    // Nothing should match! because Vector3 only constants can be listed
-    // Note, there are cases, which are un-matchable, without corrupting other matches like:
-    // if (a == Vector3) then
-    QString matchedCurrentIdentifier = this->luaEditorModelItem->extractClassBeforeDot(textBeforeCursor, this->cursorPosition);
-    if (true == ApiModel::instance()->isValidClassName(matchedCurrentIdentifier) && matchedPostIdentifier.contains("("))
+    QString textUpToCursor;
+    int lastNewlinePos = -1;
+    QString currentLine;
+    int lineCursorPos = -1;
+    int lineIndex = -1;
+
+    if (true == segment.isEmpty())
+    {
+        textUpToCursor = this->currentText.left(this->cursorPosition);
+        lastNewlinePos = textUpToCursor.lastIndexOf('\n');
+        currentLine = textUpToCursor.mid(lastNewlinePos + 1);
+        lineCursorPos = this->cursorPosition - (lastNewlinePos + 1);
+        lineIndex = textUpToCursor.count('\n') + 1;
+    }
+    else
+    {
+        currentLine = segment;
+        lineCursorPos = currentLine.size();
+
+        // Own segment area
+        if (false == currentLine.contains(","))
+        {
+            if (false == this->containsDelimiterWithQuoteBefore(currentLine))
+            {
+                handleOuterSegment = false;
+            }
+        }
+
+        QString wholeTextUpToCursor = this->currentText.left(this->cursorPosition);
+        lineIndex = wholeTextUpToCursor.count('\n') + 1;
+    }
+
+    // Detect the position of the first unbalanced opening parenthesis before the cursor
+    int bracketBalance = 0;
+    int unmatchedOpenBracketPos = -1;
+
+    // Skip the last open bracket if it's at the cursor position
+    int adjustedCursorPos = lineCursorPos;
+    if (adjustedCursorPos > 0 && currentLine[adjustedCursorPos - 1] == '(')
+    {
+        --adjustedCursorPos; // Ignore this bracket in the detection
+    }
+
+    unmatchedOpenBracketPos = this->findUnmatchedOpenBracket(currentLine, adjustedCursorPos);
+
+    QChar foundDelimeter = this->containsColonOrDotBeforeComma(currentLine, adjustedCursorPos, unmatchedOpenBracketPos);
+    if ( '\0' != foundDelimeter)
+    {
+        this->forVariable = false;
+        if ('.' == foundDelimeter)
+        {
+            this->forConstant = true;
+        }
+    }
+
+    QString localSegment;
+
+    // If there's an unmatched '(' before the cursor, use it to split the tokens
+
+    // Handle cases where there's a comma followed by the typed parameter
+    // e.g., `, ene` => remove the comma and trim the "ene"
+    // Find the position of the last comma
+    int lastCommaPos = currentLine.lastIndexOf(',');
+
+    QChar currentCharAtCursor = currentLine[adjustedCursorPos - 1];
+
+    // Function , highlight will no more work!
+    // If there's a comma before the cursor position, extract the part after the comma
+    if (lastCommaPos != -1 && lastCommaPos < lineCursorPos)
+    {
+        // Extract the text from the last comma to the lineCursorPos
+        localSegment = currentLine.mid(lastCommaPos + 1, lineCursorPos - lastCommaPos - 1).trimmed();
+        if (false == localSegment.isEmpty())
+        {
+            this->typedInsideFunction = currentLine.mid(unmatchedOpenBracketPos, adjustedCursorPos - unmatchedOpenBracketPos + 1);
+            currentLine = this->handleCurrentLine(localSegment, handleOuterSegment);
+            // AppStateManager:getGameObjectController():activatePlayerController(true, ene
+            // localSegment = "ene" -> restTyped = ene, to not handle outer segment, its inside for itself
+            if (false == this->restTyped.isEmpty() && true == this->variableFound)
+            {
+                handleOuterSegment = false;
+                return currentLine;
+            }
+        }
+        else
+        {
+            // Just pressed "," determine typed inside function
+            if ("," == currentCharAtCursor)
+            {
+                this->typedInsideFunction = currentLine.mid(unmatchedOpenBracketPos, adjustedCursorPos - unmatchedOpenBracketPos + 1);
+                this->forVariable = false;
+            }
+        }
+    }
+
+    // If there's an open bracket before the cursor position, extract the part after the open bracket
+    if (unmatchedOpenBracketPos != -1 && unmatchedOpenBracketPos < lineCursorPos && currentCharAtCursor != ",")
+    {
+        // Extract the text from the last open bracket to the lineCursorPos
+        localSegment = currentLine.mid(unmatchedOpenBracketPos + 1, lineCursorPos - unmatchedOpenBracketPos - 1).trimmed();
+        if (false == localSegment.isEmpty())
+        {
+            this->typedInsideFunction = currentLine.mid(unmatchedOpenBracketPos, adjustedCursorPos - unmatchedOpenBracketPos + 1);
+            currentLine = this->handleCurrentLine(localSegment, handleOuterSegment);
+        }
+    }
+
+    if (true == localSegment.isEmpty() && unmatchedOpenBracketPos != -1 && currentCharAtCursor != ",")
+    {
+        int segmentCursorPos = lineCursorPos - unmatchedOpenBracketPos;
+        localSegment = currentLine.mid(unmatchedOpenBracketPos, segmentCursorPos);
+
+        qDebug() << "-->Calling handleCurrentLine for segment: " << localSegment;
+        if (false == localSegment.isEmpty())
+        {
+            this->typedInsideFunction = currentLine.mid(unmatchedOpenBracketPos, adjustedCursorPos - unmatchedOpenBracketPos + 1);
+            currentLine = this->handleCurrentLine(localSegment, handleOuterSegment);
+        }
+    }
+
+    if (true == segment.isEmpty() && false == handleOuterSegment)
     {
         return "";
     }
 
-    // Remove any non-identifier characters from the beginning of the strings
-    matchedPostIdentifier.remove(trimmer);
-    matchedPostName.remove(trimmer);
+    // Match left free part
 
-    if (true == matchedPostIdentifier.isEmpty())
+    // AppStateManager:getGameObjectController():activatePlayerController(energy:getName(),
+    QString wholeTextUpToCursor = this->currentText.left(this->cursorPosition);
+    int wholeLastNewlinePos = wholeTextUpToCursor.lastIndexOf('\n');
+    QString wholeCurrentLine = wholeTextUpToCursor.mid(wholeLastNewlinePos + 1);
+
+    // energy:getName(),
+    QString leftFreeCurrentLine = currentLine;
+
+    int upToIndex = wholeCurrentLine.lastIndexOf(currentLine);
+    if (upToIndex > 0 && true == segment.isEmpty())
     {
-        matchedPostIdentifier = matchedCurrentIdentifier;
+        // Extract the substring up to the segment, so that outer line is parsed
+        leftFreeCurrentLine = wholeCurrentLine.left(upToIndex);
+        // AppStateManager:getGameObjectController():activatePlayerController(
+        lineCursorPos -= currentLine.size();
     }
 
-    // Special case:
-    // currentLine = 'gameObjectTitleComponent:setCaption(energy'
-    // matchedPostIdentifier = gameObjectTitleComponent
-    // matchedPostName = energy
-    // Cursorpos: at end of currentLine
-    // Checks whether matchedPostIdentifier or matchedPostName are closer to cursorPos to get the priority, which post word to investigate further
-    int identifierPos = currentLine.indexOf(matchedPostIdentifier);
-    int methodNamePos = currentLine.indexOf(matchedPostName);
+    QString textToSplit = leftFreeCurrentLine.left(lineCursorPos);
 
-    // Calculate distance from cursor
-    int distanceToIdentifier = (identifierPos != -1) ? qAbs(cursorPosition - (identifierPos + matchedPostIdentifier.length())) : INT_MAX;
-    int distanceToMethodName = (methodNamePos != -1) ? qAbs(cursorPosition - (methodNamePos + matchedPostName.length())) : INT_MAX;
+    qDebug() << "->textToSplit ---> " << textToSplit;
 
-    // Determine which is closer
-    if (distanceToMethodName < distanceToIdentifier)
+    QStringList tokens = textToSplit.split(QRegularExpression(R"([:.(),])"), Qt::SkipEmptyParts);
+
+    QList<int> delimiterPositions;
+    QRegularExpression delimiterRegex(R"([:.])");
+    QRegularExpressionMatchIterator it = delimiterRegex.globalMatch(textToSplit);
+
+    while (it.hasNext())
     {
-        matchedPostIdentifier = matchedPostName;
+        delimiterPositions.append(it.next().capturedStart());
     }
 
-    const auto& luaVariableInfo = this->luaEditorModelItem->getClassForVariableName(matchedPostIdentifier);
+    // Initialize variables for parsing
+    QChar lastDelimiter = '\0';
+    QString rootClassName;
 
-    if (!luaVariableInfo.type.isEmpty())
+    const auto& variableMap = this->luaEditorModelItem->getVariableMap();
+
+    for (int i = 0; i < tokens.size(); ++i)
     {
-        bool foundMatchedChainType = false;
-        for (size_t i = 0; i < luaVariableInfo.chainTypeList.size(); i++)
+        QString token = tokens[i].trimmed();
+        qDebug() << "Detected Token:" << token;
+        int tokenPos = -1;
+        if (i > 0)
         {
-            if (false == luaVariableInfo.chainTypeList[i].chainType.isEmpty() && luaVariableInfo.chainTypeList[i].line == lineIndex)
-            {
-                this->matchedClassName = luaVariableInfo.chainTypeList[i].chainType;
-                foundMatchedChainType = true;
-                break;
-            }
+            tokenPos = delimiterPositions.value(i - 1, -1);
         }
+        bool isMatched = false;
 
-        if (false == foundMatchedChainType)
+        if (i == 0)
         {
-            this->matchedClassName = luaVariableInfo.type;
-        }
-    }
-    else if (true == ApiModel::instance()->isValidClassName(matchedPostIdentifier))
-    {
-        this->matchedClassName = matchedPostIdentifier;
-    }
-    else
-    {
-        // No variable info found, take prior colon into account
-
-        // Find the last newline before the cursor position
-        int lastNewlineIndex = textBeforeCursor.lastIndexOf('\n', this->cursorPosition - 1);
-
-        // Extract the current line up to the cursor position
-        QString currentLineText = (lastNewlineIndex != -1)
-                                      ? textBeforeCursor.mid(lastNewlineIndex + 1).trimmed()
-                                      : textBeforeCursor.trimmed(); // If no newline, take from start
-
-        // Find the last colon in the current line
-        int lastColonIndex = currentLineText.lastIndexOf(':');
-
-        // If a colon is found in the current line, proceed with extraction
-        if (lastColonIndex != -1)
-        {
-            QString textBeforeLastColon = currentLineText.left(lastColonIndex).trimmed();
-            QString matchedPreIdentifier = this->luaEditorModelItem->extractWordBeforeColon(textBeforeLastColon, lastColonIndex);
-            matchedMethodName = this->luaEditorModelItem->extractMethodBeforeColon(currentLineText, lastColonIndex);
-
-            // Remove any non-identifier characters from the beginning of the strings
-            matchedPreIdentifier.remove(trimmer);
-            matchedMethodName.remove(trimmer);
-
-            QString resultClassName = ApiModel::instance()->getClassForMethodName(matchedPreIdentifier, matchedMethodName);
-            if (true == resultClassName.isEmpty())
+            if (variableMap.contains(token))
             {
-                // Handling this case: otherGameObject:getAiFlockingComponent():getOwner(): -> to get GameObject which is the owner, determined by AiFlockingComponent and then the return type of the Method getOwner
-                resultClassName = ApiModel::instance()->getClassForMethodName(matchedPreIdentifier, matchedPostName);
-                if ("void" == resultClassName || "string" == resultClassName || "number" == resultClassName || "boolean" == resultClassName)
+                const auto& luaVariableInfo = variableMap[token];
+                rootClassName = luaVariableInfo.type;
+                this->matchedClassName = rootClassName;
+
+                if (1 == tokens.size())
                 {
-                    return "";
+                    return currentLine;
                 }
-                matchedMethodName = matchedPostName;
-            }
-            else if (false == ApiModel::instance()->isValidMethodName(matchedPreIdentifier, matchedMethodName))
-            {
-                matchedMethodName = matchedPostIdentifier;
-            }
 
-            // Check if the class name is valid (e.g., not void)
-            if (true == ApiModel::instance()->isValidClassName(resultClassName))
-            {
-                this->matchedClassName = resultClassName;
-            }
-            else if (true == ApiModel::instance()->isValidClassName(matchedPreIdentifier))
-            {
-                this->matchedClassName = matchedPreIdentifier;
+                for (const auto& chainTypeInfo : luaVariableInfo.chainTypeList)
+                {
+                    if (!chainTypeInfo.chainType.isEmpty() && chainTypeInfo.line == lineIndex)
+                    {
+                        this->matchedClassName = chainTypeInfo.chainType;
+                        break;
+                    }
+                }
             }
             else
             {
-                const auto& luaVariableInfo = this->luaEditorModelItem->getClassForVariableName(matchedPreIdentifier);
+                // Case e.g. inside function parameters: physicsActiveComponent:setDirection(Vector3.
+                // Segment: Vector3, delimeter = ".", check constant
+                const auto& constants = ApiModel::instance()->getConstantsForClassName(token);
 
-                if (!luaVariableInfo.type.isEmpty())
+                if (false == constants.isEmpty())
                 {
-                    this->matchedClassName = luaVariableInfo.type;
+                    this->matchedClassName = token;
+                    isMatched = true;
+                    break;
                 }
                 else
                 {
-                    this->isProcessing = false;
-                    return matchedMethodName;
+                    // Case e.g. inside function parameters: physicsActiveComponent:setDirection(physicsActiveComponent:getDirection() +...
+                    // Segment: Vector3, delimeter = ":", check methods
+                    const auto& methods = ApiModel::instance()->getMethodsForClassName(rootClassName);
+
+                    if (false == methods.isEmpty())
+                    {
+                        for (const QVariant& methodVariant : methods)
+                        {
+                            QVariantMap methodMap = methodVariant.toMap();
+                            if (methodMap["name"].toString() == token)
+                            {
+                                this->matchedMethodName = token;
+                                rootClassName = this->matchedClassName;
+                                isMatched = true;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        qDebug() << "Token not found in variable map:" << token << " using token for rest typed.";
+                        this->restTyped = token;
+                        // For now do not handle outer segment
+                        if (true == this->forVariable)
+                        {
+                            handleOuterSegment = false;
+                        }
+                        return currentLine;
+                    }
                 }
             }
         }
         else
         {
-            // Nothing found, type unknown
-            this->matchedClassName.clear();
+            if (tokenPos > 0)
+            {
+                lastDelimiter = textToSplit[tokenPos];
+            }
+            else
+            {
+                if (i > 0)
+                {
+                    lastDelimiter = textToSplit.at(delimiterPositions.value(i - 1));
+                }
+            }
+
+            if (lastDelimiter == ':')
+            {
+                const auto& methods = ApiModel::instance()->getMethodsForClassName(rootClassName);
+
+                for (const QVariant& methodVariant : methods)
+                {
+                    QVariantMap methodMap = methodVariant.toMap();
+                    if (methodMap["name"].toString() == token)
+                    {
+                        this->matchedMethodName = token;
+                        rootClassName = this->matchedClassName;
+                        isMatched = true;
+                        break;
+                    }
+                }
+            }
+            else if (lastDelimiter == '.')
+            {
+                const auto& constants = ApiModel::instance()->getConstantsForClassName(rootClassName);
+
+                for (const QVariant& constantVariant : constants)
+                {
+                    QVariantMap constantMap = constantVariant.toMap();
+                    if (constantMap["name"].toString() == token)
+                    {
+                        this->matchedMethodName = token;
+                        isMatched = true;
+                        break;
+                    }
+                }
+            }
+            else if (token.startsWith("\"") || token.startsWith("'")) // Handle strings
+            {
+                this->restTyped = token;
+                return currentLine;
+            }
+
+            if (!isMatched)
+            {
+                // Track the unmatched token as part of the restTyped
+                this->restTyped = token;
+                qDebug() << "Unmatched token stored in restTyped:" << this->restTyped;
+                break; // Stop further processing as this token is unmatched
+            }
         }
     }
-    return matchedMethodName;
+
+    qDebug() << "Matched Class Name:" << this->matchedClassName;
+    qDebug() << "Matched Method Name:" << this->matchedMethodName;
+    qDebug() << "Matched Typed Inside Function:" << this->typedInsideFunction;
+    qDebug() << "Rest Typed:" << this->restTyped;
+
+    return currentLine;
 }
 
-void MatchClassWorker::handleConstantsResults(void)
+int MatchClassWorker::findUnmatchedOpenBracket(const QString& line, int cursorPos)
 {
-    // Ensure we check again for stop condition
-    if (this->isStopped)
+    // Initialize variables
+    int bracketBalance = 0;
+    int unmatchedOpenBracketPos = -1;
+
+    // Loop through the string backward from the adjusted cursor position
+    for (int i = cursorPos - 1; i >= 0; --i)
     {
-        this->isProcessing = false; // Reset the flag before exiting
-        return; // Exit if stopping
+        QChar ch = line[i];
+
+        if (ch == ')')
+        {
+            // Increase the balance for each closing bracket
+            ++bracketBalance;
+        }
+        else if (ch == '(')
+        {
+            // Decrease the balance for each opening bracket
+            --bracketBalance;
+
+            if (bracketBalance == 0)
+            {
+                // Balanced parenthesis - reset potential unmatched position
+                unmatchedOpenBracketPos = -1;
+            }
+            else if (bracketBalance < 0)
+            {
+                // Found an unmatched opening bracket
+                unmatchedOpenBracketPos = i;
+                break;
+            }
+        }
     }
 
-    // Set the selected class name in ApiModel for constant lookup
-    ApiModel::instance()->setSelectedClassName(this->matchedClassName);
+    // Return the position of the unmatched '(' or -1 if all brackets are balanced
+    return unmatchedOpenBracketPos;
+}
 
-    ApiModel::instance()->processMatchedConstantsForSelectedClass(this->matchedClassName, this->typedAfterKeyword);
-    this->typedAfterKeyword.clear();
+bool MatchClassWorker::containsDelimiterWithQuoteBefore(const QString& currentLine)
+{
+    // Find positions of ':' and '.'
+    QRegularExpression delimiterRegex(R"([:.])");
+    QRegularExpressionMatchIterator it = delimiterRegex.globalMatch(currentLine);
 
-    // Only show intellisense, if not shown already and if nothing has been typed so far to list all constants
-    // Note: processMatchedConstantsForSelectedClass makes the auto completion and internally a signal is send to qml to show the shrinked list, so showIntelliSenseMenu must not be called, because it would overwrite the shrinked list
-    // with all constants
-    if (!ApiModel::instance()->getIsIntellisenseShown() && this->typedAfterKeyword.isEmpty())
+    while (it.hasNext())
     {
-        ApiModel::instance()->showIntelliSenseMenu("forConstant", this->matchedClassName, mouseX, mouseY);
+        QRegularExpressionMatch match = it.next();
+        int delimiterPos = match.capturedStart();
+
+        // Check for quotes before the delimiter
+        for (int i = delimiterPos - 1; i >= 0; --i)
+        {
+            QChar ch = currentLine[i];
+            if (ch == '"' || ch == '\'')
+            {
+                // Quote found before the delimiter
+                return true;
+            }
+            else if (!ch.isSpace())
+            {
+                // Non-quote character encountered, stop checking further
+                return false;
+            }
+        }
     }
-    this->isProcessing = false;
+
+    // No quote found before any delimiter
+    return true;
+}
+
+QChar MatchClassWorker::containsColonOrDotBeforeComma(const QString& text, int cursorPos, int unbalancedOpenBracketPos)
+{
+    QChar delimeterType = '\0';
+    if (text.size() < 2)
+    {
+        return delimeterType;
+    }
+    // Goes either to the first "," or if there is an unbalancedOpenBracketPos, to that index, or to the beginning and checks if method or constant matching is involved and returns either ":", or "." or if nothing found '\0'
+    int upFromIndex = unbalancedOpenBracketPos;
+    if (-1 == upFromIndex)
+    {
+        upFromIndex = 0;
+    }
+    for (int i = cursorPos - 1; i >= upFromIndex; --i)
+    {
+        QChar ch = text[i];
+
+        if (ch == ',')
+        {
+            // Stop the search when encountering a comma
+            return delimeterType;
+        }
+        else if (ch == ':' || ch == '.')
+        {
+            delimeterType = ch;
+        }
+    }
+
+    // No colon or dot found before a comma
+    return delimeterType;
+}
+
+bool MatchClassWorker::handleInsideFunctionParameters(void)
+{
+    if (true == this->matchedMethodName.isEmpty())
+    {
+        this->isProcessing = false;
+        QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter", Qt::QueuedConnection);
+        return false;
+    }
+
+    // Get the method details from ApiModel
+    const auto& methodDetails = ApiModel::instance()->getMethodDetails(this->matchedClassName, this->matchedMethodName);
+
+    if (true == methodDetails.isEmpty())
+    {
+        this->isProcessing = false;
+        QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter", Qt::QueuedConnection);
+        return false;
+    }
+
+    if (!methodDetails.isEmpty() && !this->isStopped)
+    {
+        ApiModel::instance()->closeIntellisense();
+        ApiModel::instance()->showMatchedFunctionMenu(this->mouseX, this->mouseY);
+
+        QString returns = methodDetails["returns"].toString();
+        QString methodName = methodDetails["name"].toString();
+        QString args = methodDetails["args"].toString();  // args should be formatted as "(type1 param1, type2 param2, ...)"
+        QString description = methodDetails["description"].toString();
+
+        QString tempTyped = this->typedInsideFunction;
+
+        if (true == tempTyped.isEmpty())
+        {
+            tempTyped = this->restTyped;
+        }
+
+        if (true == tempTyped.isEmpty())
+        {
+            tempTyped = this->typedAfterKeyword;
+        }
+
+        if (true == tempTyped.isEmpty())
+        {
+            this->isProcessing = false;
+            return false;
+        }
+
+        // Combine method signature
+        QString fullSignature = returns + " " + methodName + args;
+
+        // Calculate cursor position within typed arguments
+        int cursorPositionInArgs = tempTyped.length();
+
+        // Strip the enclosing parentheses from `args`
+        QString strippedArgs = args.mid(1, args.length() - 2);
+        if (true == strippedArgs.isEmpty())
+        {
+            return false;
+        }
+
+        // Split arguments by comma and keep track of indices
+        QStringList params = strippedArgs.split(", ");
+
+        // Count commas in `tempTyped` to determine the parameter index
+        int commaCount = tempTyped.count(',');
+
+        // Calculate base index just after the method name and opening parenthesis
+        int currentParamStart = returns.length() + 1 + methodName.length() + 1;
+
+        // Determine the start and end index for the parameter to be highlighted
+        for (int i = 0; i < params.size(); ++i)
+        {
+            int paramLength = params[i].length();
+            int currentParamEnd = currentParamStart + paramLength;
+
+            // Highlight if the cursor position aligns with the parameter
+            if (i == commaCount)  // Check if this is the current parameter based on commas typed
+            {
+                QMetaObject::invokeMethod(ApiModel::instance(), "signal_highlightFunctionParameter",
+                                          Qt::QueuedConnection, Q_ARG(QString, fullSignature),
+                                          Q_ARG(QString, description),
+                                          Q_ARG(int, currentParamStart),
+                                          Q_ARG(int, currentParamEnd));
+                break;
+            }
+
+            // Move to the start of the next parameter (including comma and space)
+            currentParamStart = currentParamEnd + 2;
+        }
+
+        this->typedInsideFunction.clear();
+        this->typedAfterKeyword.clear();
+
+        return true;
+    }
 }

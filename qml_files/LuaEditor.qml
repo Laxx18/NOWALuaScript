@@ -237,6 +237,7 @@ LuaEditorQml
                         if (root.model)
                         {
                             root.model.content = luaEditor.text;
+                            root.currentText = luaEditor.text;
                         }
                     }
 

@@ -102,7 +102,6 @@ void ApiModel::setIsIntellisenseShown(bool isIntellisenseShown)
 bool ApiModel::updateMethodsForSelectedClass()
 {
     bool success = false;
-    this->methodsForSelectedClass.clear();  // Clear existing methods
 
     if (true == this->selectedClassName.isEmpty())
     {
@@ -362,55 +361,39 @@ void ApiModel::processMatchedMethodsForSelectedClass(const QString& selectedClas
 {
     this->methodsForSelectedClass.clear();
 
-    // if (typedAfterColon.size() >= 3)
+    const auto& methods = this->getMethodsForClassName(selectedClassName);
+
+    for (const auto& method : methods)
     {
-        // Get all methods for the currently selected class
-        const auto& methods = this->getMethodsForClassName(selectedClassName);
+        QVariantMap methodMap = method.toMap();
+        QString name = methodMap["name"].toString();
 
-        for (const auto& method : methods)
+        if (name.contains(typedAfterColon, Qt::CaseInsensitive))
         {
-            QVariantMap methodMap = method.toMap();
-            QString name = methodMap["name"].toString();
-
-            // Check if the method name contains the typed string
-            if (name.contains(typedAfterColon, Qt::CaseInsensitive))
+            QString type = methodMap["type"].toString();
+            if (type == "value")
             {
-                QString type = methodMap["type"].toString();
-                // Value types are constants and no methods
-                if (type == "value")
-                {
-                    continue;
-                }
-
-                QString description = methodMap["description"].toString();
-                QString args = methodMap["args"].toString();
-                QString returns = methodMap["returns"].toString();
-                QString valuetype = methodMap["valuetype"].toString();
-
-                QVariantMap matchDetails;
-                matchDetails["name"] = name;
-                matchDetails["type"] = type;
-                matchDetails["description"] = description;
-                matchDetails["args"] = args;
-                matchDetails["returns"] = returns;
-                matchDetails["valuetype"] = valuetype;
-
-                // Find the start and end indices of the match
-                int startIndex = name.indexOf(typedAfterColon, 0, Qt::CaseInsensitive);
-                int endIndex = startIndex + typedAfterColon.length() - 1;
-
-                matchDetails["startIndex"] = startIndex;
-                matchDetails["endIndex"] = endIndex;
-
-                this->methodsForSelectedClass.append(matchDetails); // Append the match details to the list
+                continue;
             }
+
+            QVariantMap matchDetails;
+            matchDetails["name"] = name;
+            matchDetails["type"] = type;
+            matchDetails["description"] = methodMap["description"].toString();
+            matchDetails["args"] = methodMap["args"].toString();
+            matchDetails["returns"] = methodMap["returns"].toString();
+            matchDetails["valuetype"] = methodMap["valuetype"].toString();
+            matchDetails["startIndex"] = name.indexOf(typedAfterColon, 0, Qt::CaseInsensitive);
+            matchDetails["endIndex"] = matchDetails["startIndex"].toInt() + typedAfterColon.length() - 1;
+
+            this->methodsForSelectedClass.append(matchDetails);
         }
     }
 
-    // If no match, show the whole list
-    if (true == this->methodsForSelectedClass.isEmpty())
+    if (this->methodsForSelectedClass.isEmpty())
     {
         this->setSelectedClassName(this->selectedClassName);
+        this->closeIntellisense();
     }
     else
     {
@@ -476,35 +459,37 @@ void ApiModel::processMatchedConstantsForSelectedClass(const QString& selectedCl
 
 void ApiModel::setMatchedVariables(const QVariantMap& matchedVariables)
 {
-    this->matchedVariables.clear();
+    QMetaObject::invokeMethod(this, [=]() {
+        this->matchedVariables.clear();
 
-    QVariantMap variableMap;
+        QVariantMap variableMap;
 
-    for (auto it = matchedVariables.begin(); it != matchedVariables.end(); ++it)
-    {
-        if (it->canConvert<QVariantMap>())
+        for (auto it = matchedVariables.begin(); it != matchedVariables.end(); ++it)
         {
-            QVariantMap currentVariable = it->toMap();
-
-            // Ensure the variable map has the required keys
-            if (currentVariable.contains("name") && currentVariable.contains("type") && currentVariable.contains("scope"))
+            if (it->canConvert<QVariantMap>())
             {
-                QString name = currentVariable["name"].toString();
-                variableMap["name"] = name;
-                variableMap["type"] = currentVariable["type"];
-                variableMap["scope"] = currentVariable["scope"];
-                variableMap["startIndex"] = currentVariable["startIndex"];
-                variableMap["endIndex"] = currentVariable["endIndex"];
+                QVariantMap currentVariable = it->toMap();
 
-                this->matchedVariables.append(variableMap);
+                // Ensure the variable map has the required keys
+                if (currentVariable.contains("name") && currentVariable.contains("type") && currentVariable.contains("scope"))
+                {
+                    QString name = currentVariable["name"].toString();
+                    variableMap["name"] = name;
+                    variableMap["type"] = currentVariable["type"];
+                    variableMap["scope"] = currentVariable["scope"];
+                    variableMap["startIndex"] = currentVariable["startIndex"];
+                    variableMap["endIndex"] = currentVariable["endIndex"];
+
+                    this->matchedVariables.append(variableMap);
+                }
             }
         }
-    }
 
-    if (!this->matchedVariables.isEmpty())
-    {
-        Q_EMIT matchedVariablesChanged();
-    }
+        if (!this->matchedVariables.isEmpty())
+        {
+            Q_EMIT matchedVariablesChanged();
+        }
+    }, Qt::QueuedConnection);
 }
 
 QString ApiModel::getClassForMethodName(const QString& className, const QString& methodName)

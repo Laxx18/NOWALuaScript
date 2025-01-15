@@ -6,8 +6,6 @@
 #include <QThread>
 
 #include "matchclassworker.h"
-#include "matchmethodworker.h"
-#include "matchvariablesworker.h"
 
 class LuaEditorModelItem : public QObject
 {
@@ -33,9 +31,6 @@ public:
         QString scope;  // Scope (e.g., global, local)
         QVector<ChainTypeInfo> chainTypeList;
     };
-
-
-
 public:
     explicit LuaEditorModelItem(QObject* parent = Q_NULLPTR);
 
@@ -73,8 +68,6 @@ public:
 
     void detectVariables(void);
 
-    void detectConstants(void);
-
     LuaVariableInfo getClassForVariableName(const QString& variableName);
 
     void resetMatchedClass(void);
@@ -83,14 +76,12 @@ public:
 
     QVariantMap processMatchedVariables(bool forSingleton, const QString& text);
 
+    QMap<QString, LuaVariableInfo> getVariableMap(void) const;
+
 public slots:
-    void startIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu = false);
+    void startIntellisenseProcessing(bool forConstant, bool forFunctionParameters, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY);
 
     void closeIntellisense(void);
-
-    void startMatchedVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY);
-
-    void startMatchedFunctionProcessing(const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY, const QString& deliveredMatchedClassName = "");
 
     void closeMatchedFunction();
 Q_SIGNALS:
@@ -162,12 +153,6 @@ private:
 
     MatchClassWorker* matchClassWorker;
     QThread* matchClassThread;
-
-    MatchMethodWorker* matchMethodWorker;
-    QThread* matchMethodThread;
-
-    MatchVariablesWorker* matchVariablesWorker;
-    QThread* matchVariablesThread;
 
     QString matchedClassName;
     bool printToConsole;

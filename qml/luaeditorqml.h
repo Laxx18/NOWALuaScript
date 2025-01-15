@@ -16,6 +16,8 @@ class LuaEditorQml : public QQuickItem
 public:
 
      Q_PROPERTY(LuaEditorModelItem* model READ model NOTIFY modelChanged)
+
+     Q_PROPERTY(QString currentText READ getCurrentText WRITE setCurrentText NOTIFY currentTextChanged)
 public:
      Q_INVOKABLE void highlightError(int line, int start, int end);
 
@@ -51,28 +53,26 @@ public:
      */
     void setModel(LuaEditorModelItem* luaEditorModelItem);
 
+    void setCurrentText(const QString& currentText);
+
+    QString getCurrentText(void) const;
+
 public slots:
     void onParentChanged(QQuickItem* newParent);
 Q_SIGNALS:
     void modelChanged();
-    void requestIntellisenseProcessing(bool forConstant, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu);
 
-    void requestMatchedForVariablesProcessing(bool forSingleton, const QString& text, int cursorPos, int mouseX, int mouseY);
+    void currentTextChanged();
+
+    void requestIntellisenseProcessing(bool forConstant, bool forFunctionParameters, const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY, bool forMatchedFunctionMenu);
 
     void requestCloseIntellisense();
 
-    void requestMatchedFunctionContextMenu(const QString& currentText, const QString& textAfterColon, int cursorPos, int mouseX, int mouseY, const QString& deliveredMatchedFunctionName = "");
     void requestCloseMatchedFunctionContextMenu();
 
     void signal_insertingNewLine(bool inserting);
 private:
-    void showIntelliSenseContextMenu(bool forConstant);
-
-    void showIntelliSenseContextMenuAtCursor(bool forConstant, const QString& textAfterColon);
-
-    void showIntelliSenseMenuForVariablesAtCursor(bool forSingleton, const QString& text);
-
-    void showMachtedFunctionContextMenuAtCursor(const QString& textAfterColon);
+    void showIntelliSenseContextMenuAtCursor(bool forConstant, bool forFunctionParameters, const QString& text, int cursorPosition, const QString& textAfterColon);
 
     // Helper function to get the cursor rectangle
     QPointF cursorAtPosition(const QString& currentText, int cursorPos);
@@ -81,15 +81,15 @@ private:
 
     void resetTextAfterDot(void);
 
-    bool isInsideFunctionParameters(QChar keyword);
+    QString getCurrentLineUpToCursor(void);
 
-    void processWithinFunction(QChar keyword);
+    bool processVariableBeingTyped(void);
 
-    void processBracket(QChar keyword);
+    bool processFunctionBeingTyped(void);
 
-    void processVariableBeingTyped(const QString& currentText, int cursorPosition, QChar keyword);
+    bool processFunctionParametersBeingTyped(void);
 
-    void processFunctionBeingTyped(const QString& currentText, int cursorPosition, QChar keyword);
+    int getCharsToReplace(const QString& originalText, const QString& suggestedText);
 private:
     LuaEditorModelItem* luaEditorModelItem;
     QQuickItem* lineNumbersEdit;
@@ -103,12 +103,13 @@ private:
     QString typedAfterColon;    // Store text typed after colon
     bool isAfterDot = false; // Track if we are after a colon
     QString typedAfterDot;    // Store text typed after colon
+    bool charDeleted;
     int cursorPosition;
     int oldCursorPosition;
     int lastColonIndex;
     int lastDotIndex;
     QString currentText;
-    QString currentLineText;
+    QString currentLineTextVariable;
     bool isInMatchedFunctionProcessing;
 };
 

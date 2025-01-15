@@ -344,7 +344,7 @@ void LuaEditorModel::sendTextToEditor(const QString& text)
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
     {
-        ApiModel::instance()->setSelectedMethodName(text);
+        // ApiModel::instance()->setSelectedMethodName(text);
         luaEditorModelItem->signal_sendTextToEditor(text);
     }
 }
@@ -354,7 +354,7 @@ void LuaEditorModel::sendVariableTextToEditor(const QString &text)
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
     {
-        ApiModel::instance()->setSelectedMethodName(text);
+        // ApiModel::instance()->setSelectedMethodName(text);
         luaEditorModelItem->signal_sendVariableTextToEditor(text);
     }
 }
