@@ -9,15 +9,16 @@ import NOWALuaScript
 // Search Window
 Window
 {
-    id: searchWindow;
+    id: root;
     width: 300;
-    height: 300;
+    height: 400;
     visible: false;
     title: "Search and Replace";
     flags: Qt.Window | Qt.WindowStaysOnTopHint; // Stay on top
 
     property bool caseSensitive: false;
     property bool wholeWord: false;
+    property int matchCount: 0;
 
     onVisibleChanged:
     {
@@ -44,15 +45,15 @@ Window
         onPositionChanged:
         {
             // Move the window by the amount the mouse has moved since it was pressed
-            searchWindow.x = mouse.x - clickOffset.x + searchWindow.x;
-            searchWindow.y = mouse.y - clickOffset.y + searchWindow.y;
+            root.x = mouse.x - clickOffset.x + root.x;
+            root.y = mouse.y - clickOffset.y + root.y;
         }
     }
 
     ColumnLayout
     {
         anchors.fill: parent;
-        anchors.margins: 10;
+        anchors.margins: 8;
 
         Label
         {
@@ -62,12 +63,11 @@ Window
         TextField
         {
             id: searchField;
-            placeholderText: "Enter text to search";
             Layout.fillWidth: true;
 
             Keys.onReturnPressed:
             {
-                NOWALuaEditorModel.searchInTextEdit(searchField.text, searchWindow.wholeWord, searchWindow.caseSensitive);
+                NOWALuaEditorModel.searchInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
             }
         }
 
@@ -79,13 +79,17 @@ Window
         TextField
         {
             id: replaceField;
-            placeholderText: "Enter replacement text";
             Layout.fillWidth: true;
 
             Keys.onReturnPressed:
             {
                 NOWALuaEditorModel.replaceInTextEdit(searchField.text, replaceField.text);
             }
+        }
+
+        Label
+        {
+            text: "Match count: " + root.matchCount;
         }
 
         RowLayout
@@ -95,7 +99,7 @@ Window
                 id: wholeWordCheckbox;
                 text: "Match whole word";
                 checked: false;
-                onCheckedChanged: searchWindow.wholeWord = wholeWordCheckbox.checked;
+                onCheckedChanged: root.wholeWord = wholeWordCheckbox.checked;
             }
 
             CheckBox
@@ -103,33 +107,52 @@ Window
                 id: caseSensitiveCheckbox;
                 text: "Case sensitive";
                 checked: false;
-                onCheckedChanged: searchWindow.caseSensitive = caseSensitiveCheckbox.checked;
+                onCheckedChanged: root.caseSensitive = caseSensitiveCheckbox.checked;
             }
         }
 
-        RowLayout
+        ColumnLayout
         {
-            Button
+            RowLayout
             {
-                text: "Search";
-                enabled: searchField.text !== "";
-                onClicked: NOWALuaEditorModel.searchInTextEdit(searchField.text, searchWindow.wholeWord, searchWindow.caseSensitive);
-            }
 
-            Button
-            {
-                text: "Replace";
-                enabled: searchField.text !== "" && replaceField.text !== "";
-                onClicked: NOWALuaEditorModel.replaceInTextEdit(searchField.text, replaceField.text);
-            }
 
-            Button
-            {
-                text: "Close";
-                onClicked:
+                Button
                 {
-                    searchWindow.visible = false;
-                    NOWALuaEditorModel.clearSearch();
+                    Layout.preferredWidth: 140;
+                    text: "Search";
+                    enabled: searchField.text !== "";
+                    onClicked: NOWALuaEditorModel.searchInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
+                }
+
+                Button
+                {
+                    Layout.preferredWidth: 140;
+                    text: "Search/Continue";
+                    enabled: searchField.text !== "";
+                    onClicked: NOWALuaEditorModel.searchContinueInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
+                }
+            }
+
+            RowLayout
+            {
+                Button
+                {
+                    Layout.preferredWidth: 140;
+                    text: "Replace";
+                    enabled: searchField.text !== "" && replaceField.text !== "";
+                    onClicked: NOWALuaEditorModel.replaceInTextEdit(searchField.text, replaceField.text);
+                }
+
+                Button
+                {
+                    Layout.preferredWidth: 140;
+                    text: "Close";
+                    onClicked:
+                    {
+                        root.visible = false;
+                        NOWALuaEditorModel.clearSearch();
+                    }
                 }
             }
         }
@@ -146,6 +169,17 @@ Window
                 searchField.text = searchText;
                 NOWALuaEditorModel.setSelectedSearchText("");
             }
+        }
+    }
+
+
+    Connections
+    {
+        target: LuaScriptQmlAdapter;
+
+        function onSignal_resultSearchMatchCount(matchCount)
+        {
+            root.matchCount = matchCount;
         }
     }
 }

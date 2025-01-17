@@ -17,6 +17,8 @@ public:
 
     Q_INVOKABLE void requestSaveLuaScript(void);
 
+    Q_INVOKABLE void addRecentFile(const QString& filePathName);
+
     Q_INVOKABLE int count(void);
 
     Q_INVOKABLE LuaEditorModelItem* getEditorModelItem(int index) const;
@@ -33,6 +35,8 @@ public:
 
     Q_INVOKABLE void searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
 
+    Q_INVOKABLE void searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
+
     Q_INVOKABLE void replaceInTextEdit(const QString& searchText, const QString& replaceText);
 
     Q_INVOKABLE void clearSearch(void);
@@ -48,10 +52,13 @@ public:
     Q_INVOKABLE void sendVariableTextToEditor(const QString& text);
 
     Q_INVOKABLE void setSelectedSearchText(const QString& searchText);
+
 public:
     Q_PROPERTY(bool hasChanges READ getHasChanges NOTIFY hasChangesChanged FINAL)
 
     Q_PROPERTY(int currentIndex READ getCurrentIndex WRITE setCurrentIndex NOTIFY currentIndexChanged FINAL)
+
+    Q_PROPERTY(QStringList recentFiles READ getRecentFiles NOTIFY recentFilesChanged)
 public:
     enum LuaScriptRoles
     {
@@ -98,6 +105,7 @@ public:
 
     int getSize(void) const;
 
+    QStringList getRecentFiles(void);
 Q_SIGNALS:
     void signal_requestAddLuaScript(const QString& filePathName);
 
@@ -113,6 +121,11 @@ Q_SIGNALS:
 
     void currentIndexChanged();
 
+    void recentFilesChanged();
+private:
+    void loadRecentFiles(void);
+
+    void saveRecentFiles(void);
 private:
     static LuaEditorModel* ms_pInstance;
     static QMutex ms_mutex;
@@ -121,6 +134,8 @@ private:
     int currentIndex;
 
     bool hasChanges;
+
+    QStringList recentFiles;
 };
 
 #endif // LUAEDITORMODEL_H

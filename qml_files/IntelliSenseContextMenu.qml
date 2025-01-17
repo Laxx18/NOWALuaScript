@@ -27,6 +27,7 @@ Rectangle
         property string textColor: "white";
         property string borderColor: "grey";
         property string resultType: "forClass"; // Possible values: forClass, forConstant, forVariable
+        property string userData: "";
         property int currentIndex: 0;  // Track selected index
     }
 
@@ -115,6 +116,25 @@ Rectangle
                 else
                 {
                     content = "Details: Variable: " + selectedIdentifier.name + "\nType: " + selectedIdentifier.scope;
+                }
+            }
+            else if (p.resultType == "noClassFound")
+            {
+                content = "Variable is not recognized, maybe you its a parameter and you forgot to cast it properly?";
+            }
+            else if (p.resultType == "noConstantFound")
+            {
+                content = "Constant is not recognized.";
+            }
+            else if (p.resultType == "noVariableFound")
+            {
+                if (p.userData == "")
+                {
+                    content = "Variable is not recognized. Check its assignment variable, if it is known. Maybe you its a parameter and you forgot to cast it properly?";
+                }
+                else
+                {
+                    content = "Variable is not recognized. Check its assignment variable: '" + p.userData + "', if it is known. Maybe you its a parameter and you forgot to cast it properly?";
                 }
             }
 
@@ -458,8 +478,22 @@ Rectangle
 
     function open(resultType, x, y)
     {
-        p.resultType = resultType;
         p.currentIndex = 0;
+
+        // Split the string by ":"
+        var parts = resultType.split(":");
+
+        // Extract the first and second parts
+        var firstPart = parts[0];
+        var secondPart = parts.length > 1 ? parts[1] : "";
+
+        p.resultType = firstPart;
+        p.userData = secondPart;
+
+        if (p.resultType == "noClassFound" || p.resultType == "noConstantFound" || p.resultType == "noVariableFound")
+        {
+            keyHoverTimer.restart();
+        }
 
         // Clear flickable contentHeight explicitly before recalculating
         flickable.contentHeight = 0;
@@ -494,6 +528,9 @@ Rectangle
     function close()
     {
         NOWAApiModel.isIntellisenseShown = false;
+        p.userData = "";
+        p.resultType = "";
+        p.currentIndex = 0;
         root.visible = false;
     }
 

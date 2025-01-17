@@ -755,6 +755,17 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
     }
 }
 
+bool LuaEditorModelItem::isLuaNativeType(const QString& typeName)
+{
+    // List of Lua native types
+    const QSet<QString> luaNativeTypes = {
+        "nil", "boolean", "number", "string", "function", "userdata", "thread", "table", "void"
+    };
+
+    // Check if the provided typeName matches any Lua native type
+    return luaNativeTypes.contains(typeName.trimmed());
+}
+
 void LuaEditorModelItem::handleTableTypes(const QString& variableName, const QString& statement, int lineNumber)
 {
     // Regex to match all types inside square brackets (e.g., [number], [42], [GameObject])
@@ -774,8 +785,8 @@ void LuaEditorModelItem::handleTableTypes(const QString& variableName, const QSt
         for (int i = 0; i < extractedTypes.size(); ++i)
         {
             QString currentType = extractedTypes[i];
-
-            if ("void" == currentType || "string" == currentType || "number" == currentType || "boolean" == currentType)
+            
+            if (true == this->isLuaNativeType(currentType))
             {
                 continue;
             }
@@ -814,7 +825,7 @@ void LuaEditorModelItem::handleTableAccess(const QString& statement, int lineNum
                 {
                     QRegularExpressionMatch subTypeMatch = it.next();
                     QString subType = subTypeMatch.captured(1); // Extract each subtype
-                    if ("void" == subType || "string" == subType || "number" == subType || "boolean" == subType)
+                    if (true == this->isLuaNativeType(subType))
                     {
                         continue;
                     }

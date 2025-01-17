@@ -43,6 +43,7 @@ MenuBar
                selectedFilePath = selectedFilePath.replace("file://", "/");
            }
 
+           NOWALuaEditorModel.addRecentFile(selectedFilePath);
            NOWALuaEditorModel.requestAddLuaScript(selectedFilePath);
        }
     }
@@ -121,6 +122,39 @@ MenuBar
             enabled: NOWALuaEditorModel.hasChanges;
             icon.name: "document-save";  // Common icon for "Save"
             onTriggered: NOWALuaEditorModel.requestSaveLuaScript();
+        }
+
+        MenuSeparator {}
+
+        // Repeater to display recent files dynamically
+        Repeater
+        {
+            model: NOWALuaEditorModel.recentFiles;
+
+            delegate: MenuItem
+            {
+                text: modelData.split('/').pop()  // Extract filename from path
+                onTriggered: NOWALuaEditorModel.requestAddLuaScript(modelData)
+            }
+        }
+
+        // Only show this separator if there are files in the model
+        MenuSeparator { visible: NOWALuaEditorModel.recentFiles.length > 0 }
+
+        MenuItem
+        {
+            text: "Load All";
+
+            visible: NOWALuaEditorModel.recentFiles.length > 0;
+
+            onTriggered:
+            {
+                // Loop through all recent files and load them
+                NOWALuaEditorModel.recentFiles.forEach(function(file)
+                {
+                    NOWALuaEditorModel.requestAddLuaScript(file);
+                });
+            }
         }
 
         Action

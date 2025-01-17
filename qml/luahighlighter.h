@@ -37,6 +37,8 @@ public:
 
     void searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
 
+    void searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
+
     void replaceInTextEdit(const QString& searchText, const QString& replaceText);
 
     void clearSearch(void);
@@ -48,6 +50,10 @@ public:
     void insertSentText(int sizeToReplace, const QString& text);
 Q_SIGNALS:
     void insertingNewLineChanged(bool isInserting);
+
+    void resultSearchMatchCount(int matchCount);
+
+    void resultSearchContinuePosition(const QRectF& cursorRectangle);
 protected:
     void highlightBlock(const QString& text) override;
 
@@ -89,6 +95,9 @@ private:
     QString replaceText;
     bool wholeWord;
     bool caseSensitiv;
+    int matchCount;
+    bool searchContinueMode;
+    int currentMatchIndex;
 };
 
 #endif // LUAHIGHLIGHTER_H

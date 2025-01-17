@@ -94,6 +94,8 @@ public:
 
     void showIntelliSenseMenu(const QString& resultType, const QString& wordBeforeColon, int mouseX, int mouseY);
 
+    void showNothingFound(const QString& resultType, int mouseX, int mouseY);
+
     void showMatchedFunctionMenu(int mouseX, int mouseY);
 
     void closeIntellisense(void);

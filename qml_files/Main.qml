@@ -224,7 +224,7 @@ ApplicationWindow
         sequence: "Ctrl+F";
         onActivated:
         {
-            searchDialog.visible = !searchDialog.visible; // Toggle visibility
+            searchDialog.visible = true;
             if (searchDialog.visible)
             {
                searchDialog.raise(); // Bring the window to the front

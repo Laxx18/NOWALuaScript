@@ -2,6 +2,8 @@
 
 #include "model/luaeditormodelitem.h"
 
+#include "luascriptqmladapter.h"
+
 #include <QTextDocument>
 #include <QFontMetrics>
 #include <QQuickWindow>
@@ -83,6 +85,11 @@ void LuaEditorQml::setModel(LuaEditorModelItem* luaEditorModelItem)
         this->highlighter->searchInTextEdit(searchText, wholeWord, caseSensitive);
     });
 
+    connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_searchContinueInTextEdit, this, [this](const QString& searchText, bool wholeWord, bool caseSensitive) {
+        this->luaEditorTextEdit->forceActiveFocus();
+        this->highlighter->searchContinueInTextEdit(searchText, wholeWord, caseSensitive);
+    });
+
     connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_replaceInTextEdit, this, [this](const QString& searchText, const QString& replaceText) {
         this->luaEditorTextEdit->forceActiveFocus();
         this->highlighter->replaceInTextEdit(searchText, replaceText);
@@ -160,6 +167,12 @@ void LuaEditorQml::setModel(LuaEditorModelItem* luaEditorModelItem)
 
     connect(this->highlighter, &LuaHighlighter::insertingNewLineChanged, this, [this](bool inserting) {
         Q_EMIT signal_insertingNewLine(inserting);
+    });
+
+    connect(this->highlighter, &LuaHighlighter::resultSearchMatchCount, LuaScriptQmlAdapter::instance(), &LuaScriptQmlAdapter::resultSearchMatchCount);
+
+    connect(this->highlighter, &LuaHighlighter::resultSearchContinuePosition, this, [this](const QRectF& cursorRectangle) {
+        Q_EMIT signal_resultSearchContinuePosition(cursorRectangle);
     });
 
     Q_EMIT modelChanged();

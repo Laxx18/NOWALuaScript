@@ -70,11 +70,32 @@ void MatchClassWorker::process(void)
 
             if (false == variablesMap.empty())
             {
-                this->variableFound = true;
-                // Emit signal directly since the data structure has already been updated
-                Q_EMIT ApiModel::instance()->signal_showIntelliSenseMenu("forVariable", mouseX, mouseY);
-                this->isProcessing = false;
-                return;
+                // Retrieves the first key from the QVariantMap
+                QString firstKey = variablesMap.keys().first();
+
+                // Accesses the QVariantMap associated with the first key
+                QVariantMap firstVariable = variablesMap.value(firstKey).toMap();
+
+                // Retrieves the "type" field
+                QString variableType = firstVariable.value("type").toString();
+
+                // Passes the type to getMethodsForClassName
+                // const auto& methods = ApiModel::instance()->getMethodsForClassName(variableType);
+
+                // Causes to much other trouble
+                // if (false == methods.isEmpty())
+                {
+                    this->variableFound = true;
+                    // Emit signal directly since the data structure has already been updated
+                    Q_EMIT ApiModel::instance()->signal_showIntelliSenseMenu("forVariable", mouseX, mouseY);
+                    this->isProcessing = false;
+                    return;
+                }
+                // else
+                // {
+                //     ApiModel::instance()->showNothingFound("noVariableFound:" + variableType, mouseX, mouseY);
+                //     return;
+                // }
             }
             else
             {
@@ -90,12 +111,18 @@ void MatchClassWorker::process(void)
 
     // Only re-match variables if the menu is not shown and user is not typing something after colon, because else the auto completion would not work, because each time variables would be re-detected
     // But user typed already the next expression, which would no more match!
-    if (!ApiModel::instance()->getIsIntellisenseShown() && (true == this->forFunctionParameters || false == this->typedInsideFunction.isEmpty()))
+
+    if (false == this->typedInsideFunction.isEmpty())
     {
         if (false == this->matchedClassName.isEmpty() && false == this->matchedMethodName.isEmpty())
         {
             if (true == this->forFunctionParameters)
             {
+                if (ApiModel::instance()->getIsIntellisenseShown())
+                {
+                    ApiModel::instance()->closeIntellisense();
+                }
+
                 if (true == this->handleInsideFunctionParameters())
                 {
                     // Check if we should stop before triggering the menu
@@ -125,13 +152,29 @@ void MatchClassWorker::process(void)
         cleanTypedAfterKeyword.remove(QRegularExpression(R"([():.\s])"));
         if (false == this->forConstant)
         {
-            ApiModel::instance()->processMatchedMethodsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
-            ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
+            if (false == this->matchedClassName.isEmpty())
+            {
+                ApiModel::instance()->processMatchedMethodsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
+                ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
+            }
+            else
+            {
+                // Causes to much other trouble
+                // ApiModel::instance()->showNothingFound("noClassFound", mouseX, mouseY);
+            }
         }
         else
         {
-            ApiModel::instance()->processMatchedConstantsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
-            ApiModel::instance()->showIntelliSenseMenu("forConstant", this->matchedClassName, mouseX, mouseY);
+            if (false == this->matchedClassName.isEmpty())
+            {
+                ApiModel::instance()->processMatchedConstantsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
+                ApiModel::instance()->showIntelliSenseMenu("forConstant", this->matchedClassName, mouseX, mouseY);
+            }
+            else
+            {
+                // Causes to much other trouble
+                // ApiModel::instance()->showNothingFound("noConstantFound", mouseX, mouseY);
+            }
         }
         this->typedAfterKeyword.clear();
     }
@@ -147,6 +190,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
         this->restTyped.clear();
         this->matchedClassName.clear();
         this->matchedMethodName.clear();
+        this->typedInsideFunction.clear();
     }
 
     if (std::abs(this->cursorPosition - this->oldCursorPosition) > 1 || false == this->luaEditorModelItem->hasVariablesDetected())
@@ -300,6 +344,14 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
 
     QString textToSplit = leftFreeCurrentLine.left(lineCursorPos);
 
+    // Split up to first unmatched (
+    // E.g.: gameObjectTitleComponent:setCaption(rightLowerArm:getPhysicsRagDollComponent():getAngularDamping());
+    // -> gameObjectTitleComponent:setCaption
+    if (-1 != unmatchedOpenBracketPos)
+    {
+        textToSplit = textToSplit.left(unmatchedOpenBracketPos + 1);
+    }
+
     qDebug() << "->textToSplit ---> " << textToSplit;
 
     QStringList tokens = textToSplit.split(QRegularExpression(R"([:.(),])"), Qt::SkipEmptyParts);
@@ -360,7 +412,8 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
 
                 if (false == constants.isEmpty())
                 {
-                    this->matchedClassName = token;
+                    rootClassName = token;
+                    this->matchedClassName = rootClassName;
                     isMatched = true;
                     break;
                 }
@@ -389,7 +442,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                         qDebug() << "Token not found in variable map:" << token << " using token for rest typed.";
                         this->restTyped = token;
                         // For now do not handle outer segment
-                        if (true == this->forVariable)
+                        if (true == this->forVariable && this->restTyped.size() > 2)
                         {
                             handleOuterSegment = false;
                         }
@@ -404,13 +457,6 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
             {
                 lastDelimiter = textToSplit[tokenPos];
             }
-            else
-            {
-                if (i > 0)
-                {
-                    lastDelimiter = textToSplit.at(delimiterPositions.value(i - 1));
-                }
-            }
 
             if (lastDelimiter == ':')
             {
@@ -422,7 +468,15 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                     if (methodMap["name"].toString() == token)
                     {
                         this->matchedMethodName = token;
+
+                        QString valueType = methodMap["valuetype"].toString();
+                        if (false == this->isLuaNativeType(valueType))
+                        {
+                            this->matchedClassName = methodMap["valuetype"].toString();
+                        }
                         rootClassName = this->matchedClassName;
+
+                        this->forConstant = false;
                         isMatched = true;
                         break;
                     }
@@ -438,6 +492,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                     if (constantMap["name"].toString() == token)
                     {
                         this->matchedMethodName = token;
+                        this->forConstant = true;
                         isMatched = true;
                         break;
                     }
@@ -465,6 +520,17 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     qDebug() << "Rest Typed:" << this->restTyped;
 
     return currentLine;
+}
+
+bool MatchClassWorker::isLuaNativeType(const QString& typeName)
+{
+    // List of Lua native types
+    const QSet<QString> luaNativeTypes = {
+        "nil", "boolean", "number", "string", "function", "userdata", "thread", "table", "void"
+    };
+
+    // Check if the provided typeName matches any Lua native type
+    return luaNativeTypes.contains(typeName.trimmed());
 }
 
 int MatchClassWorker::findUnmatchedOpenBracket(const QString& line, int cursorPos)

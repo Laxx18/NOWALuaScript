@@ -43,10 +43,16 @@ LuaEditorQml
 
     Connections
     {
-        target: root
+        target: root;
+
         function onSignal_insertingNewLine(inserting)
         {
             root.isInsertingNewLine = inserting;
+        }
+
+        function onSignal_resultSearchContinuePosition(cursorRectangle)
+        {
+            flickable.ensureVisible(cursorRectangle);
         }
     }
 
@@ -261,16 +267,15 @@ LuaEditorQml
                             {
                                 // A word was selected, trigger the search in LuaHighlighter
                                 root.highlightWordUnderCursor(luaEditor.selectedText);
-                                NOWALuaEditorModel.setSelectedSearchText(luaEditor.selectedText);
                             }
                             else
                             {
                                 root.clearHighlightWordUnderCursor();
                             }
                         }
-                        else
+                        if (luaEditor.selectedText.length > 0)
                         {
-
+                            NOWALuaEditorModel.setSelectedSearchText(luaEditor.selectedText);
                         }
                     }
 

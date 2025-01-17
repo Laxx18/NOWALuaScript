@@ -42,12 +42,15 @@ Q_SIGNALS:
     void signal_requestSetLuaApi(const QString& filePathName, bool parseSilent);
     void signal_luaApiPreparationResult(bool parseSilent, bool success, const QString& message);
     void signal_relayKeyPress(int key);
+    void signal_resultSearchMatchCount(int matchCount);
 public Q_SLOTS:
     void syntaxCheckResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
 
     void runtimeErrorResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
 
     void luaApiPreparationResult(bool parseSilent, bool success, const QString& message);
+
+    void resultSearchMatchCount(int matchCount);
 private:
     static LuaScriptQmlAdapter* ms_pInstance;
     static QMutex ms_mutex;

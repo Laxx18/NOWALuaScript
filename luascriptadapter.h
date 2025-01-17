@@ -49,6 +49,7 @@ public Q_SLOTS:
     bool sendLuaScriptRuntimeError(const QString& filePathName, const QString&  errorMessage, int line, int start, int end);
 
     QMap<QString, ClassData> prepareLuaApi(const QString& filePathName, bool parseSilent);
+
 Q_SIGNALS:
     void signal_luaApiPrepareInitial(const QString& filePathName, bool parseSilent);
     void signal_luaScriptReady(const QString& filePathName, const QString& content);
@@ -56,6 +57,7 @@ Q_SIGNALS:
     void signal_runtimeError(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
     void signal_luaScriptSaved();
     void signal_luaApiPrepareResult(bool silent, bool success, const QString& message);
+
 private:
     int findLuaScript(const QString& filePathName);
 

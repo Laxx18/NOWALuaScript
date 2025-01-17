@@ -2,6 +2,7 @@
 
 #include <QtConcurrent>
 #include <QQuickTextDocument>
+#include <QAbstractTextDocumentLayout>
 #include <QDebug>
 
 LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
@@ -18,7 +19,10 @@ LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
     runtimeErrorEnd(-1),
     runtimeErrorAlreadyCleared(true),
     wholeWord(false),
-    caseSensitiv(false)
+    caseSensitiv(false),
+    matchCount(0),
+    searchContinueMode(false),
+    currentMatchIndex(0)
 {
     this->errorFormat.setBackground(Qt::transparent); // No background
     this->errorFormat.setForeground(Qt::red); // Set error color to red
@@ -261,13 +265,6 @@ void LuaHighlighter::removeMatchingBracketsBold()
             setFormat(i, 1, charFormat);
         }
     }
-}
-
-void LuaHighlighter::clearSearch()
-{
-    this->searchText = "";
-    this->replaceText = "";
-    this->rehighlight();
 }
 
 void LuaHighlighter::undo()
@@ -517,12 +514,39 @@ void LuaHighlighter::breakLine()
     Q_EMIT insertingNewLineChanged(false); // Emit signal after the new line is inserted
 }
 
+void LuaHighlighter::clearSearch()
+{
+    this->searchText = "";
+    this->replaceText = "";
+    this->matchCount = 0;
+    this->currentMatchIndex = 0;
+    this->searchContinueMode = false;
+    this->rehighlight();
+}
+
 void LuaHighlighter::searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitve)
 {
     this->searchText = searchText; // Store the search text as a member variable
     this->wholeWord = wholeWord;
     this->caseSensitiv = caseSensitve;
+    this->matchCount = 0;
+    this->currentMatchIndex = 0;
+    this->searchContinueMode = false;
+    this->rehighlight();
+}
 
+void LuaHighlighter::searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitve)
+{
+    this->searchText = searchText; // Store the search text as a member variable
+    this->wholeWord = wholeWord;
+    this->caseSensitiv = caseSensitve;
+    if (this->currentMatchIndex > this->matchCount)
+    {
+        this->currentMatchIndex = 0;
+    }
+    this->matchCount = 0;
+    this->searchContinueMode = true;
+    ++this->currentMatchIndex;
     this->rehighlight();
 }
 
@@ -649,40 +673,71 @@ void LuaHighlighter::highlightBlock(const QString& text)
     }
 
     // Search highlight logic (for highlighting search terms)
-    if (!this->searchText.isEmpty())
+    if (false == this->searchText.isEmpty())
     {
         int searchStart = 0;
         QTextCharFormat searchFormat;
         searchFormat.setBackground(Qt::yellow);  // Highlight format for search results
 
         auto searchFlags = Qt::CaseInsensitive;
-        if (true == this->caseSensitiv)
+        if (this->caseSensitiv)
         {
             searchFlags = Qt::CaseSensitive;
         }
 
-        // Loop through the current block to find all matches for the search term
+        QTextDocument::FindFlags searchFlags2 = QTextDocument::FindFlags();
+        if (true == this->caseSensitiv)
+        {
+            searchFlags2 = QTextDocument::FindFlag::FindCaseSensitively;
+        }
+        if (true == this->wholeWord)
+        {
+            searchFlags2 |= QTextDocument::FindFlag::FindWholeWords;
+        }
+
         while ((searchStart = text.indexOf(this->searchText, searchStart, searchFlags)) != -1)
         {
-            // Check if "whole word" match is enabled
-            if (true == this->wholeWord && false == this->isWholeWord(text, searchStart, this->searchText.length()))
+            if (this->wholeWord && !this->isWholeWord(text, searchStart, this->searchText.length()))
             {
-                // If it's not a whole word match, skip this occurrence
                 searchStart += this->searchText.length();
                 continue;
             }
 
-            // Apply the format to highlight the search text
-            setFormat(searchStart, this->searchText.length(), searchFormat);
+            ++this->matchCount;
 
-            // If replaceText is not empty, replace the found text
-            if (!this->replaceText.isEmpty())
+            if (this->searchContinueMode && this->currentMatchIndex == this->matchCount)
             {
-                this->replaceInBlock(searchStart);
+                // Highlight only the current match
+                setFormat(searchStart, this->searchText.length(), searchFormat);
+                // Move the QTextCursor to the match position
+                QTextCursor cursor(this->document());
+                cursor.setPosition(currentBlock().position() + searchStart); // Match position in the document
+                cursor.setPosition(cursor.position() + this->searchText.length(), QTextCursor::KeepAnchor);
+
+                // Calculate the cursor rectangle for the matched text
+                QRectF cursorRectangle = this->document()->documentLayout()->blockBoundingRect(cursor.block());
+
+                // Add an offset to the rectangle's height, so that if the editor must scroll, the found text is properly visible and not half cut on the edge
+                constexpr int yOffset = 50;
+                cursorRectangle.setHeight(cursorRectangle.height() + yOffset);
+
+                Q_EMIT resultSearchMatchCount(this->currentMatchIndex);
+                Q_EMIT resultSearchContinuePosition(cursorRectangle);
+                return; // Stop after highlighting the current match
+            }
+            else if (false == this->searchContinueMode)
+            {
+                // Highlight all matches if not in "continue" mode
+                setFormat(searchStart, this->searchText.length(), searchFormat);
             }
 
-            // Move the start position to after the current match to avoid infinite loop
             searchStart += this->searchText.length();
+        }
+
+        // Emit total match count after processing all blocks
+        if (false == this->searchContinueMode)
+        {
+            Q_EMIT resultSearchMatchCount(this->matchCount);
         }
     }
 }

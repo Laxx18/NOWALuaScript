@@ -1,6 +1,8 @@
 #include "model/luaeditormodel.h"
 #include "apimodel.h"
 
+#include <QSettings>
+
 LuaEditorModel* LuaEditorModel::ms_pInstance = Q_NULLPTR;
 QMutex LuaEditorModel::ms_mutex;
 
@@ -9,7 +11,7 @@ LuaEditorModel::LuaEditorModel(QObject* parent)
     currentIndex(-1),
     hasChanges(false)
 {
-
+    this->loadRecentFiles();
 }
 
 LuaEditorModel* LuaEditorModel::instance()
@@ -185,6 +187,45 @@ void LuaEditorModel::requestSaveLuaScript(void)
     }
 }
 
+void LuaEditorModel::addRecentFile(const QString& filePathName)
+{
+    if (true == this->recentFiles.contains(filePathName))
+    {
+        // Avoids duplicates by removing the existing entry
+        this->recentFiles.removeAll(filePathName);
+    }
+
+    // Adds the file at the beginning of the list
+    this->recentFiles.prepend(filePathName);
+
+    if (this->recentFiles.size() > 5)
+    {
+        // Removes the oldest entry
+        this->recentFiles.removeLast();
+    }
+
+    this->saveRecentFiles();
+    // Notify QML about the change
+    Q_EMIT recentFilesChanged();
+}
+
+QStringList LuaEditorModel::getRecentFiles(void)
+{
+    return this->recentFiles;
+}
+
+void LuaEditorModel::loadRecentFiles(void)
+{
+    QSettings settings = QSettings("NOWA", "NOWALuaScript");
+    this->recentFiles = settings.value("RecentFiles", QStringList()).toStringList();
+}
+
+void LuaEditorModel::saveRecentFiles(void)
+{
+    QSettings settings = QSettings("NOWA", "NOWALuaScript");
+    settings.setValue("RecentFiles", this->recentFiles);
+}
+
 int LuaEditorModel::count(void)
 {
     return this->luaScripts.size();
@@ -276,6 +317,20 @@ void LuaEditorModel::searchInTextEdit(const QString& searchText, bool wholeWord,
     if (Q_NULLPTR != luaEditorModelItem)
     {
         Q_EMIT luaEditorModelItem->signal_searchInTextEdit(searchText, wholeWord, caseSensitive);
+    }
+}
+
+void LuaEditorModel::searchContinueInTextEdit(const QString &searchText, bool wholeWord, bool caseSensitive)
+{
+    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
+    {
+        return;
+    }
+
+    const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
+    if (Q_NULLPTR != luaEditorModelItem)
+    {
+        Q_EMIT luaEditorModelItem->signal_searchContinueInTextEdit(searchText, wholeWord, caseSensitive);
     }
 }
 

@@ -71,6 +71,10 @@ Q_SIGNALS:
     void requestCloseMatchedFunctionContextMenu();
 
     void signal_insertingNewLine(bool inserting);
+
+    void signal_resultSearchMatchCount(int matchCount);
+
+    void signal_resultSearchContinuePosition(const QRectF& cursorRectangle);
 private:
     void showIntelliSenseContextMenuAtCursor(bool forConstant, bool forFunctionParameters, const QString& text, int cursorPosition, const QString& textAfterColon);
 

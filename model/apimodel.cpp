@@ -533,6 +533,11 @@ void ApiModel::showIntelliSenseMenu(const QString& resultType, const QString& wo
     Q_EMIT signal_showIntelliSenseMenu(resultType, mouseX, mouseY);
 }
 
+void ApiModel::showNothingFound(const QString& resultType, int mouseX, int mouseY)
+{
+    Q_EMIT signal_showIntelliSenseMenu(resultType, mouseX, mouseY);
+}
+
 void ApiModel::showMatchedFunctionMenu(int mouseX, int mouseY)
 {
     Q_EMIT signal_showMatchedFunctionMenu(mouseX, mouseY);

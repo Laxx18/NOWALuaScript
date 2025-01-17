@@ -105,6 +105,8 @@ Q_SIGNALS:
 
     void signal_searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
 
+    void signal_searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
+
     void signal_replaceInTextEdit(const QString& searchText, const QString& replaceText);
 
     void signal_clearSearch();
@@ -124,6 +126,8 @@ private:
     void detectSingletons(const QString& line, int lineNumber);
 
     void handleTableAccess(const QString& statement, int lineNumber);
+
+    bool isLuaNativeType(const QString& typeName);
 
     void handleTableTypes(const QString& variableName, const QString& statement, int lineNumber);
 
