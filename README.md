@@ -175,7 +175,7 @@ return {
 	},
 	GameObjectController =
 	{
-		type = "singleton",
+		type = "class",
 		description = "The game object controller manages all game objects.",
 		childs = 
 		{
@@ -207,7 +207,7 @@ return {
 	},
 	Vector3 =
 	{
-		type = "class",
+		type = "singleton",
 		description = "Vector3 class.",
 		childs = 
 		{
@@ -252,7 +252,7 @@ Scene1_barrel_0["onContactOnce"] = function(gameObject0, gameObject1, contact)
 end
 ```
 
-If you want to have recognition for singleton types, set the name as type = "singleton" and start the name with a capital letter.
+If you want to have recognition for singleton, constant types, set the name as type = "singleton" and start the name with a capital letter.
 See the NOWA_Api.lua example above.
 Then you can e.g. write:
 
