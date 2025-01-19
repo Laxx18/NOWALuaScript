@@ -29,6 +29,8 @@ private:
 
     int findUnmatchedOpenBracket(const QString& line, int cursorPos);
 
+    int findPriorCommaPos(const QString& line, int cursorPos);
+
     bool containsDelimiterWithQuoteBefore(const QString& currentLine);
 
     QChar containsColonOrDotBeforeComma(const QString& text, int cursorPos, int unbalancedOpenBracketPos);

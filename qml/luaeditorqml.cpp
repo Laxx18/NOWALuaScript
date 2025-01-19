@@ -196,6 +196,21 @@ int LuaEditorQml::getCharsToReplace(const QString& originalText, const QString& 
         }
     }
 
+    if (0 == matchLength)
+    {
+        int j = 0;
+        for (int i = trimmedOriginal.length() - 1; i >= 0; --i, ++j)
+        {
+            QChar ch = trimmedOriginal[i];
+
+            if (ch == ':' || ch == '.' || ch == ',' || ch == '(')
+            {
+                matchLength = j;
+                break;
+            }
+        }
+    }
+
     // Return the number of characters to replace
     return matchLength;
 }
