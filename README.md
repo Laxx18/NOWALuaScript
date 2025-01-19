@@ -5,6 +5,7 @@ This document outlines the key features, installation, usage, and communication 
 
 ![Screenshot of Feature 1](https://github.com/Laxx18/NOWALuaScript/raw/main/Feature1.png)
 ![Screenshot of Feature 2](https://github.com/Laxx18/NOWALuaScript/raw/main/Feature2.png)
+![Screenshot of Feature 3](https://github.com/Laxx18/NOWALuaScript/raw/main/Feature3.png)
 
 ### Features Video:
 [![NOWALuaScript Demo Video](https://img.youtube.com/vi/HYddkQEztzw/1.jpg)](https://youtu.be/HYddkQEztzw)
@@ -268,4 +269,3 @@ Please do not do such ugly things like using several commands in one line, as th
 scene1_barrel_0:getPhysicsActiveComponent():setDirection(0, 1); scene1_barrel_0:getReferenceComponentFromIndex(1):connect();
 ```
 By following these practices, you can maximize the integration of NOWALuaScript with external applications and take full advantage of its powerful scripting and auto-completion features.
-
