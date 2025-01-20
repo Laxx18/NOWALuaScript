@@ -653,6 +653,9 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
     // Check for the last occurrence of `:` or `.`
     int colonPos = currentLineText.lastIndexOf(':');
     int dotPos = currentLineText.lastIndexOf('.');
+    int commaPos = currentLineText.lastIndexOf(',');
+
+    int lineCursorPos = this->cursorPosition - (lastNewlinePos + 1);
 
     // Determine the closer symbol and its type
     int symbolPos = -1;
@@ -669,6 +672,11 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
         isForConstant = true; // It's a constant
     }
 
+    if (commaPos > symbolPos)
+    {
+        symbolPos = commaPos;
+    }
+
     if (symbolPos == -1/* || symbolPos == currentLineText.size() - 1*/)
     {
         return false; // No `:` or `.` or it's at the end
@@ -677,7 +685,7 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
     QString afterSymbol = currentLineText.mid(symbolPos);
 
     // Ensure we have valid characters after the symbol
-    QRegularExpression functionNamePattern(R"(^[:.a-zA-Z_][a-zA-Z0-9_:.\s]*$)");
+    QRegularExpression functionNamePattern(R"(^[:.a-zA-Z_,\s][a-zA-Z0-9_:.,\s]*$)");
     if (!functionNamePattern.match(afterSymbol).hasMatch())
     {
         return false;

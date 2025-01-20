@@ -292,6 +292,42 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
             return this->handleCurrentLine(localSegment, handleOuterSegment);
         }
     }
+
+    // Handle isolated segments after a delimiter with a preceding space
+    for (int i = 0; i < currentLine.length(); ++i)
+    {
+        QChar ch = currentLine[i];
+
+        if ((ch == ':' || ch == '.') && i > 0 && currentLine[i - 1].isSpace())
+        {
+            QString potentialSegment = currentLine.mid(i + 1).trimmed(); // Extract after the delimiter
+            if (!potentialSegment.isEmpty())
+            {
+                // Check if the segment ends with a ","
+                if (potentialSegment.endsWith(','))
+                {
+                    qDebug() << "-> Potential segment ends with a comma, skipping:" << potentialSegment;
+                    break; // Skip evaluation for segments ending with a comma
+                }
+
+                qDebug() << "-> Found potential segment after space and delimiter:" << potentialSegment;
+
+                // Extract the part after the space up to the end
+                int segmentStart = potentialSegment.lastIndexOf(' ', i - 1) + 1;
+                QString localSegment = potentialSegment.mid(segmentStart).trimmed();
+                if (!localSegment.isEmpty())
+                {
+                    this->typedInsideFunction = localSegment;
+
+                    qDebug() << "Isolated segment detected after space and delimiter:" << localSegment;
+                    // Call handleCurrentLine recursively with the extracted parameter segment
+                    handleOuterSegment = false;
+                    return this->handleCurrentLine(localSegment, handleOuterSegment);
+                }
+            }
+        }
+    }
+
     if (true == insideBrackets && false == bracketStack.isEmpty())
     {
         // Get the position of the last unmatched opening parenthesis
