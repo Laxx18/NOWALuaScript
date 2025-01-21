@@ -66,6 +66,7 @@ qt_add_qml_module(NOWALuaScript
         qml/luaeditorqml.h qml/luaeditorqml.cpp
         qml/luahighlighter.h qml/luahighlighter.cpp
         luascriptadapter.h luascriptadapter.cpp
+        RESOURCES resources.qrc
 )
 
 set_target_properties(NOWALuaScript PROPERTIES
@@ -159,6 +160,21 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         )
     endif()
 
+endif()
+
+# Define the icon files for each platform
+if(WIN32)
+    # Windows: Add the .ico file through a resource file
+    set(APP_ICON_RESOURCE "${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.rc")
+    target_sources(NOWALuaScript PRIVATE ${APP_ICON_RESOURCE})
+elseif(APPLE)
+    # macOS: Use the .icns file
+    set(MACOSX_BUNDLE_ICON_FILE "NOWALuaScript.icns")
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.icns" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    target_sources(NOWALuaScript PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.icns")
+else()
+    # Linux: Install the .png file and ensure it is used in the .desktop file
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.png" DESTINATION share/icons/hicolor/48x48/apps)
 endif()
 
 #message(STATUS "--->Executable path: ${CMAKE_BINARY_DIR}/NOWALuaScript.exe")

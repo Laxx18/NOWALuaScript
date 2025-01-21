@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QXmlStreamReader>
+#include <QIcon>
 
 #include "luascriptcontroller.h"
 #include "luascriptqmladapter.h"
@@ -18,6 +19,17 @@ int main(int argc, char *argv[])
     app.setOrganizationName("NOWA");
     app.setOrganizationDomain("https://lukas-kalinowski.com");
     app.setApplicationName("NOWALuaScript");
+#ifdef Q_OS_WIN
+    app.setWindowIcon(QIcon(":/icons/NOWALuaScript.ico")); // Windows
+#endif
+
+#ifdef Q_OS_LINUX
+    app.setWindowIcon(QIcon(":/icons/NOWALuaScript.png")); // Linux
+#endif
+
+#ifdef Q_OS_MAC
+    app.setWindowIcon(QIcon(":/icons/NOWALuaScript.icns")); // macOS
+#endif
 
     QQmlApplicationEngine engine;
     // For custom modules
