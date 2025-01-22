@@ -17,10 +17,16 @@ public:
 
     Q_PROPERTY(QString title READ getTitle NOTIFY titleChanged)
 public:
-    struct ChainTypeInfo
+    struct HorizontalChainTypeInfo
+    {
+        int position = -1;
+        QString chainType; // The horizontal chain types are the changed types inside a line at a given position -> getGameProgressModule():getGlobalValue() -> getGameProgressModule then getGlobalValue
+    };
+
+    struct VerticalChainTypeInfo
     {
         int line = -1;
-        QString chainType; // The chain type (initially empty, filled when type can be determined), e.g. scene1_barrel_0:getPhysicsActiveComponent() -> chainType -> PhysicsActiveComponent
+        QVector<HorizontalChainTypeInfo> horizontalChainTypes; // The chain types (initially empty, filled when type can be determined), e.g. scene1_barrel_0:getPhysicsActiveComponent() -> chainType -> PhysicsActiveComponent
     };
 
     struct LuaVariableInfo
@@ -29,7 +35,7 @@ public:
         QString type;   // Inferred type (initially empty, filled when type can be determined)
         int line = -1;       // Line number where the variable is declared
         QString scope;  // Scope (e.g., global, local)
-        QVector<ChainTypeInfo> chainTypeList;
+        QVector<VerticalChainTypeInfo> verticalChainTypeList;
     };
 public:
     explicit LuaEditorModelItem(QObject* parent = Q_NULLPTR);
@@ -55,14 +61,6 @@ public:
     void restoreContent(void);
 
     void openProjectFolder(void);
-
-    // void matchClass(const QString& currentText, int cursorPosition, int mouseX, int mouseY);
-
-    QString extractWordBeforeColon(const QString& currentText, int cursorPosition);
-
-    QString extractMethodBeforeColon(const QString& currentText, int cursorPosition);
-
-    QString extractClassBeforeDot(const QString& currentText, int cursorPosition);
 
     bool hasUnmatchedOpeningBracket(const QString& text);
 

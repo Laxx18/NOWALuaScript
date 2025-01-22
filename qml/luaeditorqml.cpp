@@ -224,15 +224,25 @@ void LuaEditorQml::setCurrentText(const QString& currentText)
 
     this->currentText = currentText;
 
+    // Ensure the cursor position is within bounds
+    if (this->cursorPosition > currentText.length())
+    {
+        this->cursorPosition = currentText.length();
+    }
+
+    // Process variable typing
     this->processVariableBeingTyped();
 
-    if (false == this->processFunctionBeingTyped())
+    // Handle function and parameter processing
+    if (!this->processFunctionBeingTyped())
     {
         this->processFunctionParametersBeingTyped();
     }
 
+    // Emit signal to notify about the text change
     Q_EMIT currentTextChanged();
 }
+
 
 QString LuaEditorQml::getCurrentText(void) const
 {
@@ -636,11 +646,6 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
     this->isAfterColon = false;
     this->isAfterDot = false;
 
-    // if (this->isInMatchedFunctionProcessing)
-    // {
-    //     return;
-    // }
-
     int tempCursorPosition = this->cursorPosition;
     QString tempCurrentText = this->currentText;
 
@@ -649,6 +654,11 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
     QString currentLineText = textUpToCursor.mid(lastNewlinePos + 1);
 
     currentLineText = currentLineText.trimmed();
+
+    if (currentLineText.contains("::"))
+    {
+        return false;
+    }
 
     // Check for the last occurrence of `:` or `.`
     int colonPos = currentLineText.lastIndexOf(':');
@@ -859,10 +869,16 @@ void LuaEditorQml::clearRuntimeError()
 
 void LuaEditorQml::cursorPositionChanged(int cursorPosition)
 {
-    if (Q_NULLPTR != this->highlighter)
+    if (this->cursorPosition == cursorPosition)
+    {
+        return;
+    }
+
+    this->cursorPosition = cursorPosition;
+
+    if (this->highlighter != Q_NULLPTR)
     {
         this->charDeleted = false;
         this->highlighter->setCursorPosition(cursorPosition);
-        this->cursorPosition = cursorPosition;
     }
 }

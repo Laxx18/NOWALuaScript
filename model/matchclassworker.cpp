@@ -62,6 +62,7 @@ void MatchClassWorker::process(void)
     // Checks if a new variable or singleton Name is being typed, if there is no matched class name so far
     if (this->restTyped.size() > 2 && true == this->forVariable)
     {
+        qDebug() << "########variable recognized: " << this->restTyped;
         QChar startChar = this->restTyped.at(0);
         bool forSingleton = startChar.isUpper();
         QVariantMap variablesMap = this->luaEditorModelItem->processMatchedVariables(forSingleton, this->restTyped);
@@ -402,14 +403,30 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
 
     // Split the line for further processing
     QString textToSplit = leftFreeCurrentLine.left(lineCursorPos);
-    if (false == bracketStack.isEmpty() && -1 != bracketStack.top())
+
+    // Trim irrelevant prefixes like assignments using a regex
+    // E.g. "         local boss1Defeated = AppStateManager:getGameProgressModule():"
+    // -> local boss1Defeated = shall not be used
+    // QRegularExpression assignmentRegex(R"(\s*(local\s+)?[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*)");
+    QRegularExpression assignmentRegex(R"(\s*=\s*)");
+    QRegularExpressionMatch match = assignmentRegex.match(textToSplit);
+    if (match.hasMatch())
+    {
+        textToSplit = textToSplit.mid(match.capturedEnd()); // Remove the matched prefix
+    }
+
+    // Consider brackets if necessary
+    if (false == bracketStack.isEmpty() && -1 != bracketStack.top() && textToSplit.contains('('))
     {
         textToSplit = textToSplit.left(bracketStack.top() + 1);
     }
 
     qDebug() << "->textToSplit ---> " << textToSplit;
 
+    // Split the remaining text
     QStringList tokens = textToSplit.split(QRegularExpression(R"([:.(),])"), Qt::SkipEmptyParts);
+
+    qDebug() << "->tokens ---> " << tokens;
 
     QList<int> delimiterPositions;
     QRegularExpression delimiterRegex(R"([:.])");
@@ -450,12 +467,26 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                     return currentLine;
                 }
 
-                for (const auto& chainTypeInfo : luaVariableInfo.chainTypeList)
+                bool foundChainType = false;
+                for (const auto& verticalChainTypeInfo : luaVariableInfo.verticalChainTypeList)
                 {
-                    if (!chainTypeInfo.chainType.isEmpty() && chainTypeInfo.line == lineIndex)
+                    if (false == verticalChainTypeInfo.horizontalChainTypes.isEmpty() && verticalChainTypeInfo.line == lineIndex)
                     {
-                        this->matchedClassName = chainTypeInfo.chainType;
-                        break;
+                        // Loop through the horizontal chain types and set positions up to the cursor position
+                        for (auto horizontalChainTypeInfo : verticalChainTypeInfo.horizontalChainTypes)
+                        {
+                            // If the variable position is less than or equal to the cursor position, the matched horizontal chain type has been found
+                            if (horizontalChainTypeInfo.position <= lineCursorPos)
+                            {
+                                this->matchedClassName = horizontalChainTypeInfo.chainType;
+                                foundChainType = true;
+                                break;
+                            }
+                        }
+                        if (true == foundChainType)
+                        {
+                            break;  // Exit after processing the correct line
+                        }
                     }
                 }
             }
@@ -525,20 +556,39 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                     if (methodMap["name"].toString() == token)
                     {
                         this->matchedMethodName = token;
-                        // Does not work for this case:
-                        //gameObjectTitleComponent:getOffsetOrientation():angleBetween(
-                        // getOffsetOrientation = Vector3 class
-                        //     angleBetween = Radian
-                        //
-                        //            Problem:
-                        //                      methodName: angleBetween
-                        //                      className must be: Vector3, instead Radian, which comes from valuetype
-                        // QString valueType = methodMap["valuetype"].toString();
-                        // if (false == this->isLuaNativeType(valueType))
-                        // {
-                        //     this->matchedClassName = methodMap["valuetype"].toString();
-                        // }
+
+
                         rootClassName = this->matchedClassName;
+
+#if 0
+                        if (rootClassName != this->matchedClassName)
+                        {
+                            rootClassName = this->matchedClassName;
+                        }
+
+                        else
+                        {
+                            // Does not work for this case:
+                            //gameObjectTitleComponent:getOffsetOrientation():angleBetween(
+                            // getOffsetOrientation = Vector3 class
+                            //     angleBetween = Radian
+                            //
+                            //            Problem:
+                            //                      methodName: angleBetween
+                            //                      className must be: Vector3, instead Radian, which comes from valuetype
+                            // QString valueType = methodMap["valuetype"].toString();
+                            // if (false == this->isLuaNativeType(valueType))
+                            // {
+                            //     this->matchedClassName = methodMap["valuetype"].toString();
+                            // }
+                            QString valueType = methodMap["valuetype"].toString();
+                            if (false == this->isLuaNativeType(valueType))
+                            {
+                                this->matchedClassName = methodMap["valuetype"].toString();
+                                rootClassName = this->matchedClassName;
+                            }
+                        }
+#endif
 
                         this->forConstant = false;
                         isMatched = true;
@@ -658,7 +708,6 @@ int MatchClassWorker::findPriorCommaPos(const QString& line, int cursorPos)
     // Return the position of the unmatched '(' or -1 if all brackets are balanced
     return priorCommaPos;
 }
-
 
 bool MatchClassWorker::containsDelimiterWithQuoteBefore(const QString& currentLine)
 {

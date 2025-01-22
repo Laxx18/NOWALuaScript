@@ -237,25 +237,26 @@ LuaEditorQml
                     onTextChanged:
                     {
                         checkSyntaxTimer.restart();
-                        lineNumbersEdit.updateLineNumbers();  // Sync line numbers on text change
+                        lineNumbersEdit.updateLineNumbers();
 
-                        // // Sets new changes to model
                         if (root.model)
                         {
                             root.model.content = luaEditor.text;
-                            root.currentText = luaEditor.text;
+
+                            // Update currentText only after cursorPosition is updated
+                            Qt.callLater(() => {
+                                root.currentText = luaEditor.text;
+                            });
                         }
+                    }
+
+                    onCursorPositionChanged: {
+                        root.cursorPositionChanged(cursorPosition);
                     }
 
                     onCursorRectangleChanged:
                     {
                         flickable.ensureVisible(cursorRectangle);
-                    }
-
-                    onCursorPositionChanged:
-                    {
-                        // Notify C++ whenever the cursor changes
-                        root.cursorPositionChanged(cursorPosition);
                     }
 
                     // Track changes in selected text

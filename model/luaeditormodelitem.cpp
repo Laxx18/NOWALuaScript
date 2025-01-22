@@ -142,127 +142,6 @@ QString LuaEditorModelItem::getFilePathName() const
     return this->filePathName;
 }
 
-QString LuaEditorModelItem::extractWordBeforeColon(const QString& currentText, int cursorPos)
-{
-    // Start from the cursor position and move backwards to find the last word before a colon
-    int startPos = cursorPos - 1;
-
-    // Iterate backwards from the cursor position until a delimiter is found
-    while (startPos >= 0)
-    {
-        QChar currentChar = currentText[startPos];
-
-        // Stop if a delimiter (":", "=", space, or line break) is found
-        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n' || currentChar == '(')
-        {
-            break;
-        }
-
-        startPos--;
-    }
-
-    // Extract the word between the delimiter and the cursor position
-    QString wordBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1));
-
-    // Now handle case-sensitive class recognition
-    // Remove "get" prefix and brackets if found
-    if (wordBeforeColon.startsWith("get"))
-    {
-        wordBeforeColon = wordBeforeColon.mid(3);  // Remove the "get"
-    }
-
-    // Find the position of the first opening bracket '('
-    int bracketPos = wordBeforeColon.indexOf('(');
-    if (bracketPos != -1)
-    {
-        // Remove everything from the first '(' to the closing ')'
-        wordBeforeColon = wordBeforeColon.left(bracketPos).trimmed();
-    }
-
-    // if (wordBeforeColon.endsWith("FromName"))
-    // {
-    //     wordBeforeColon = wordBeforeColon.left(wordBeforeColon.size() - 8);
-    // }
-    // else if (wordBeforeColon.endsWith("FromIndex"))
-    // {
-    //     wordBeforeColon = wordBeforeColon.left(wordBeforeColon.size() - 9);
-    // }
-
-    return wordBeforeColon;
-}
-
-QString LuaEditorModelItem::extractMethodBeforeColon(const QString& currentText, int cursorPos)
-{
-    // Start from the cursor position and move backwards to find the last word before a colon
-    int startPos = cursorPos - 1;
-
-    // Iterate backwards from the cursor position until a delimiter is found
-    while (startPos >= 0)
-    {
-        QChar currentChar = currentText[startPos];
-
-        // Stop if a delimiter (":", "=", space, or line break) is found
-        if (currentChar == ':' || currentChar == '=' || currentChar == ' ' || currentChar == '\n' || currentChar == '(')
-        {
-            break;
-        }
-
-        startPos--;
-    }
-
-    // Extract the word between the delimiter and the cursor position
-    QString methodBeforeColon = currentText.mid(startPos + 1, cursorPos - (startPos + 1));
-    // Find the position of the first opening bracket '('
-    int bracketPos = methodBeforeColon.indexOf('(');
-    if (bracketPos != -1)
-    {
-        // Remove everything from the first '(' to the closing ')'
-        methodBeforeColon = methodBeforeColon.left(bracketPos).trimmed();
-    }
-
-    return methodBeforeColon;
-}
-
-QString LuaEditorModelItem::extractClassBeforeDot(const QString& currentText, int cursorPosition)
-{
-    // Extract the current line up to the cursor position
-    QString currentLine = currentText.left(cursorPosition).section('\n', -1).trimmed();
-
-    // Define a regular expression to match the word before the dot or colon
-    QRegularExpression pattern(R"(\b(\w+)(?:\.\w+)?\s*$)"); // This captures the last word before optional dot
-
-    // Match the pattern against the current line
-    QRegularExpressionMatch match = pattern.match(currentLine);
-    if (match.hasMatch())
-    {
-        // Return the class name found
-        return match.captured(1); // Return the first captured group, which is the class name
-    }
-
-    // Return empty if no match
-    return QString();
-}
-
-bool LuaEditorModelItem::hasUnmatchedOpeningBracket(const QString& text)
-{
-    int openBracketCount = 0;
-    int closeBracketCount = 0;
-
-    for (QChar ch : text)
-    {
-        if (ch == '(')
-        {
-            openBracketCount++;
-        }
-        else if (ch == ')')
-        {
-            closeBracketCount++;
-        }
-    }
-
-    return openBracketCount > closeBracketCount;
-}
-
 void LuaEditorModelItem::detectVariables(void)
 {
     this->variableMap.clear();
@@ -340,6 +219,26 @@ void LuaEditorModelItem::detectVariables(void)
     } while(true == needThirdRound);
 
     // Additional passes for other types of assignments or specific handling if needed
+}
+
+bool LuaEditorModelItem::hasUnmatchedOpeningBracket(const QString& text)
+{
+    int openBracketCount = 0;
+    int closeBracketCount = 0;
+
+    for (QChar ch : text)
+    {
+        if (ch == '(')
+        {
+            openBracketCount++;
+        }
+        else if (ch == ')')
+        {
+            closeBracketCount++;
+        }
+    }
+
+    return openBracketCount > closeBracketCount;
 }
 
 void LuaEditorModelItem::detectLocalVariables(const QString& line, int lineNumber)
@@ -487,10 +386,12 @@ void LuaEditorModelItem::handleMethodCallAssignment(const QString& statement, in
                         // objectVar = AppStateManager and chain type would be GameObjectController for this line
                         if (true == this->variableMap.contains(objectVar))
                         {
-                            ChainTypeInfo chainTypeInfo;
-                            chainTypeInfo.line = lineNumber;
-                            chainTypeInfo.chainType = returnType;
-                            this->variableMap[objectVar].chainTypeList.append(chainTypeInfo);
+                            VerticalChainTypeInfo verticalChainTypeInfo;
+                            verticalChainTypeInfo.line = lineNumber;
+                            HorizontalChainTypeInfo horizontalChainTypeInfo;
+                            horizontalChainTypeInfo.chainType = returnType;
+                            verticalChainTypeInfo.horizontalChainTypes.append(horizontalChainTypeInfo);
+                            this->variableMap[objectVar].verticalChainTypeList.append(verticalChainTypeInfo);
                         }
 
                         break;
@@ -641,6 +542,8 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
 
         // Split the expression by ":" to get the method chain
         QStringList methodChain = expression.split(':');
+
+        int position = 0; // To track the starting position of each part
         if (false == methodChain.isEmpty())
         {
             // Initial class or variable name
@@ -651,10 +554,34 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
                                       ? variableMap[baseClassOrVar].type
                                       : baseClassOrVar;  // Start with base class if it's a known type
 
+            if (false == baseClassOrVar.isEmpty() && false == currentType.isEmpty())
+            {
+                if (baseClassOrVar != currentType)
+                {
+                    if (false == this->variableMap.contains(baseClassOrVar))
+                    {
+                        LuaVariableInfo varInfo;
+                        varInfo.name = baseClassOrVar;
+                        varInfo.type = currentType;
+                        varInfo.line = lineNumber;
+                        varInfo.scope = "local";
+                        this->variableMap[baseClassOrVar] = varInfo;
+                    }
+                }
+            }
+
+            QVector<HorizontalChainTypeInfo> horizontalChainTypeInfos;
             // Iterate through the method chain
             for (int i = 1; i < methodChain.size(); ++i)
             {
                 QString methodCall = methodChain[i].split('(').first().trimmed();  // Extract method name
+
+                // Find the position of the method call
+                int methodPosition = statement.indexOf(methodCall, position);  // Get position based on current `position`
+                qDebug() << methodCall << "position =" << methodPosition;
+
+                // Update position for the next method call
+                position = methodPosition /*+ methodCall.length()*/;  // Update position after the current method
 
                 if (currentType.isEmpty())
                 {
@@ -676,10 +603,18 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
                     continue;
                 }
 
+                QString tempType = methodDetails["returns"].toString();
+
                 // Get the return type for the next step
-                currentType = methodDetails["returns"].toString();
-                if (currentType.isEmpty())
+                currentType = tempType;
+                if (false == currentType.isEmpty())
                 {
+                    HorizontalChainTypeInfo horizontalChainTypeInfo;
+                    horizontalChainTypeInfo.position = position;
+                    horizontalChainTypeInfo.chainType = tempType;
+
+                    horizontalChainTypeInfos.append(horizontalChainTypeInfo);
+
                     if (true == this->printToConsole)
                     {
                         qDebug() << "Method" << methodCall << "has no return type information";
@@ -696,8 +631,6 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
             // Add the variable with the resolved type to variableMap
             if (!currentType.isEmpty())
             {
-                // this->handleTableTypes(variableName, currentType, lineNumber);
-
                 bool alreadyExisting = false;
                 // If it has already a type, to not overwrite it
                 if (this->variableMap.contains(variableName))
@@ -707,44 +640,64 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
                         alreadyExisting = true;
                     }
                 }
+
+                LuaVariableInfo varInfo;
+                VerticalChainTypeInfo verticalChainTypeInfo;
+                bool hasChainType = false;
+
                 if (false == alreadyExisting)
                 {
-                    LuaVariableInfo varInfo;
-
-                    bool hasChainType = false;
-                    ChainTypeInfo chainTypeInfo;
                     if (true == variableName.isEmpty())
                     {
                         variableName = baseClassOrVar;
-                        chainTypeInfo.line = lineNumber;
-                        chainTypeInfo.chainType = currentType;
+                        verticalChainTypeInfo.line = lineNumber;
 
-                        varInfo.chainTypeList.append(chainTypeInfo);
+                        verticalChainTypeInfo.horizontalChainTypes = horizontalChainTypeInfos;
+
+                        varInfo.verticalChainTypeList.append(verticalChainTypeInfo);
+
                         hasChainType = true;
                     }
+                }
 
-                    if (!this->variableMap.contains(variableName))
+                if (baseClassOrVar != variableName)
+                {
+                    if (false == horizontalChainTypeInfos.isEmpty())
                     {
-                        varInfo.name = variableName;
-                        if (false == hasChainType)
-                        {
-                            varInfo.type = currentType;
-                        }
-                        varInfo.line = lineNumber;
-                        varInfo.scope = this->variableMap[variableName].scope;
-                        this->variableMap[variableName] = varInfo;
-                        if (true == this->printToConsole)
-                        {
-                            qDebug() << "Added variable" << variableName << "with type" << currentType << "to variableMap";
-                        }
+                        verticalChainTypeInfo.line = lineNumber;
+
+                        verticalChainTypeInfo.horizontalChainTypes = horizontalChainTypeInfos;
+
+                        varInfo.verticalChainTypeList.append(verticalChainTypeInfo);
+
+                        this->variableMap[baseClassOrVar].verticalChainTypeList.append(verticalChainTypeInfo);
+                    }
+                }
+
+                if (false == this->variableMap.contains(variableName) && false == alreadyExisting)
+                {
+                    varInfo.name = variableName;
+                    if (false == hasChainType)
+                    {
+                        varInfo.type = currentType;
+                    }
+                    varInfo.line = lineNumber;
+                    varInfo.scope = this->variableMap[variableName].scope;
+                    this->variableMap[variableName] = varInfo;
+                    if (true == this->printToConsole)
+                    {
+                        qDebug() << "Added variable" << variableName << "with type" << currentType << "to variableMap";
+                    }
+                }
+                else
+                {
+                    if (true == hasChainType)
+                    {
+                        this->variableMap[variableName].verticalChainTypeList.append(verticalChainTypeInfo);
                     }
                     else
                     {
-                        if (true == hasChainType)
-                        {
-                            this->variableMap[variableName].chainTypeList.append(chainTypeInfo);
-                        }
-                        else
+                        if (true == this->variableMap[variableName].type.isEmpty())
                         {
                             this->variableMap[variableName].type = currentType;
                         }
