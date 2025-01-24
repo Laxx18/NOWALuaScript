@@ -388,6 +388,7 @@ Rectangle
                                         case "forVariable":
                                             return "Matched: " +  nameText + " -> Type: '" + modelData.type + "' scope: '" + modelData.scope + "'";
                                     }
+                                    return "";
                                 }
 
                                 verticalAlignment: Text.AlignVCenter;

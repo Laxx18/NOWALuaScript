@@ -59,13 +59,23 @@ void MatchClassWorker::process(void)
         ApiModel::instance()->setSelectedClassName(this->matchedClassName);
     }
 
-    // Checks if a new variable or singleton Name is being typed, if there is no matched class name so far
+    QString variableTyped;
+
     if (this->restTyped.size() > 2 && true == this->forVariable)
     {
-        qDebug() << "########variable recognized: " << this->restTyped;
-        QChar startChar = this->restTyped.at(0);
+        variableTyped = this->restTyped;
+    }
+    else if (true == this->restTyped.isEmpty() && false == this->typedAfterKeyword.isEmpty() && true == this->forVariable && false == this->matchedClassName.isEmpty())
+    {
+        variableTyped = this->typedAfterKeyword;
+    }
+    // Checks if a new variable or singleton Name is being typed, if there is no matched class name so far
+    if (false == variableTyped.isEmpty())
+    {
+        qDebug() << "########variable recognized: " << variableTyped;
+        QChar startChar =variableTyped.at(0);
         bool forSingleton = startChar.isUpper();
-        QVariantMap variablesMap = this->luaEditorModelItem->processMatchedVariables(forSingleton, this->restTyped);
+        QVariantMap variablesMap = this->luaEditorModelItem->processMatchedVariables(forSingleton, variableTyped);
         if (false == variablesMap.empty())
         {
             ApiModel::instance()->setMatchedVariables(variablesMap);

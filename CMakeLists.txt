@@ -92,7 +92,11 @@ install(TARGETS NOWALuaScript
 
 #add_compile_definitions("SOURCE_ROOT=${CMAKE_SOURCE_DIR}")
 # Pass CMAKE_SOURCE_DIR as a preprocessor definition
-target_compile_definitions(NOWALuaScript PRIVATE SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(NOWALuaScript PRIVATE
+    SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
+    $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT> # Define QT_NO_DEBUG_OUTPUT only in Release mode
+    $<$<NOT:$<CONFIG:Release>>:QT_DEBUG_OUTPUT> # Optional: Define QT_DEBUG_OUTPUT in other modes
+)
 
 # Generate the deployment script for QML-based Qt6 applications
 #qt_generate_deploy_qml_app_script(

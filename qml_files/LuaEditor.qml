@@ -14,11 +14,6 @@ LuaEditorQml
 
     focus: true;
 
-    Component.onCompleted:
-    {
-        console.debug("----> LuaEditorQml LOADED");
-    }
-
     property string textColor: "black";
 
     property int leftPadding: 4;
