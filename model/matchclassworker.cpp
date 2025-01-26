@@ -566,9 +566,19 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                     if (methodMap["name"].toString() == token)
                     {
                         this->matchedMethodName = token;
-
-
+                        QString args = methodMap["args"].toString();
+                        if (rootClassName == this->matchedClassName && "()" == args)
+                        {
+                            QString valueType = methodMap["valuetype"].toString();
+                            if (false == this->isLuaNativeType(valueType))
+                            {
+                                this->matchedClassName = valueType;
+                                rootClassName = this->matchedClassName;
+                            }
+                        }
                         rootClassName = this->matchedClassName;
+
+
 
 #if 0
                         if (rootClassName != this->matchedClassName)

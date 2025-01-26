@@ -78,8 +78,8 @@ MenuBar
         id: messageDialog;
         visible: false;
         // Prompt user to save changes
-        text: "Lua Api parse result";
-        informativeText: "";
+        text: "Lua api parse result:";
+        informativeText: "--";
         buttons: MessageDialog.Ok;
 
         // icon: StandardIcon.Warning;
@@ -97,8 +97,8 @@ MenuBar
         {
             if (!parseSilent)
             {
-                messageDialog.visible = true;
                 messageDialog.informativeText = message;
+                messageDialog.visible = true;
             }
         }
     }
@@ -261,20 +261,19 @@ MenuBar
 
         Action
         {
+            text: qsTr("Open Lua Api File");
+            // icon.name: "document-save";  // Common icon for "Save"
+            onTriggered: apiFileOpenDialog.open();
+        }
+
+        Action
+        {
             text: qsTr("Open Lua Script Folder");
             shortcut: "Ctrl+L";
             icon.name: "folder-open";  // Common icon for opening folders
             onTriggered: NOWALuaEditorModel.openProjectFolder();
         }
-
-        Action
-        {
-            text: qsTr("Open Lua Api File");
-            // icon.name: "document-save";  // Common icon for "Save"
-            onTriggered: apiFileOpenDialog.open();
-        }
     }
-
 
     AboutDialog
     {
