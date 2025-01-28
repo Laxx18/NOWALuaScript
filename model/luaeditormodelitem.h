@@ -123,6 +123,8 @@ private:
 
     void detectSingletons(const QString& line, int lineNumber);
 
+    void detectFunctions(const QString& line, int lineNumber);
+
     void handleTableAccess(const QString& statement, int lineNumber);
 
     bool isLuaNativeType(const QString& typeName);

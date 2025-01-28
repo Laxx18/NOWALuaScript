@@ -143,10 +143,11 @@ LuaEditorQml
                         lineNumbersEdit.text = lineText;
                     }
 
-                    onCursorRectangleChanged:
-                    {
-                        flickable.ensureVisible(cursorRectangle);
-                    }
+                    // May not be done for lineNumbersEdit, because its already done for the LuaEditor, else it would have been done twice and deliver strange effects
+                    // onCursorRectangleChanged:
+                    // {
+                    //     flickable.ensureVisible(cursorRectangle);
+                    // }
                 }
 
                 // Lua Code Editor

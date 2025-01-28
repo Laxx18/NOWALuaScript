@@ -117,6 +117,10 @@ void MatchClassWorker::process(void)
                 this->handleCurrentLine("", handleOuterSegment);
             }
         }
+        else
+        {
+            ApiModel::instance()->closeIntellisense();
+        }
     }
 
     this->forVariable = true;
@@ -167,7 +171,10 @@ void MatchClassWorker::process(void)
             if (false == this->matchedClassName.isEmpty())
             {
                 ApiModel::instance()->processMatchedMethodsForSelectedClass(this->matchedClassName, cleanTypedAfterKeyword);
-                ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
+                if (false == ApiModel::instance()->getSelectedClassName().isEmpty())
+                {
+                    ApiModel::instance()->showIntelliSenseMenu("forClass", this->matchedClassName, mouseX, mouseY);
+                }
             }
             else
             {
@@ -433,8 +440,57 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
 
     qDebug() << "->textToSplit ---> " << textToSplit;
 
-    // Split the remaining text
+#if 0
+    // Define a list of reserved keywords to filter
+    QStringList reservedKeywords = {"if", "while", "for", "switch", "else", "return"};
+
+    // Regular expression to match reserved keywords at the start, optionally followed by "(" or " "
+    QRegularExpression keywordRegex(R"(^\s*(\b(?:if|while|for|switch|else|return)\b)(?=\s|\())");
+
+    // Remove reserved keywords at the start of the string
+    QRegularExpressionMatch keywordMatch = keywordRegex.match(textToSplit);
+    if (keywordMatch.hasMatch())
+    {
+        // Cut off the matched reserved keyword from the start
+        textToSplit = textToSplit.mid(keywordMatch.capturedLength()).trimmed();
+    }
+
+    // Split the remaining text into tokens
     QStringList tokens = textToSplit.split(QRegularExpression(R"([:.(),])"), Qt::SkipEmptyParts);
+
+    // Remove any reserved keywords from the tokens list
+    tokens.removeIf([&reservedKeywords](const QString &token) {
+        return reservedKeywords.contains(token);
+    });
+#else
+
+    // Define a list of reserved keywords to filter
+    QStringList reservedKeywords = {"if", "while", "for", "switch", "else", "return"};
+
+    // Regular expression to match reserved keywords at the start, optionally followed by "(" or " "
+    QRegularExpression keywordRegex(R"(^\s*(\b(?:if|while|for|switch|else|return)\b)(?=\s|\())");
+
+    // Remove reserved keywords at the start of the string
+    QRegularExpressionMatch keywordMatch = keywordRegex.match(textToSplit);
+    if (keywordMatch.hasMatch())
+    {
+        // Cut off the matched reserved keyword from the start
+        textToSplit = textToSplit.mid(keywordMatch.capturedLength()).trimmed();
+    }
+
+    // Regular expression to split based on punctuation and operators, while preserving comparison operators
+    QStringList tokens = textToSplit.split(QRegularExpression(R"([:.(),\s]+|==|!=|>=|<=|>|<|=)"), Qt::SkipEmptyParts);
+
+    // Remove any reserved keywords from the tokens list
+    tokens.removeIf([&reservedKeywords](const QString &token) {
+        return reservedKeywords.contains(token);
+    });
+
+    // Debug: Output the resulting tokens
+    qDebug() << "Filtered tokens ---> " << tokens;
+
+
+#endif
 
     qDebug() << "->tokens ---> " << tokens;
 
@@ -567,7 +623,20 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                     {
                         this->matchedMethodName = token;
                         QString args = methodMap["args"].toString();
-                        if (rootClassName == this->matchedClassName && "()" == args)
+
+                        if (true == this->forFunctionParameters)
+                        {
+                            if (rootClassName == this->matchedClassName && "()" == args)
+                            {
+                                QString valueType = methodMap["valuetype"].toString();
+                                if (false == this->isLuaNativeType(valueType))
+                                {
+                                    this->matchedClassName = valueType;
+                                    rootClassName = this->matchedClassName;
+                                }
+                            }
+                        }
+                        else
                         {
                             QString valueType = methodMap["valuetype"].toString();
                             if (false == this->isLuaNativeType(valueType))
@@ -575,10 +644,11 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                                 this->matchedClassName = valueType;
                                 rootClassName = this->matchedClassName;
                             }
+                            else
+                            {
+                                rootClassName = this->matchedClassName;
+                            }
                         }
-                        rootClassName = this->matchedClassName;
-
-
 
 #if 0
                         if (rootClassName != this->matchedClassName)

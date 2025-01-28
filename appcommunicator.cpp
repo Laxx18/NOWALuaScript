@@ -246,7 +246,7 @@ void AppCommunicator::readXmlFile(const QString& filePath)
         this->ptrLuaScriptController->slot_createLuaScript(filePathName);
     }
 
-#if 1
+#if 0
     // Delete the file after reading
     if (QFile::remove(filePath))
     {
@@ -301,6 +301,23 @@ void AppCommunicator::deleteCommunicationFile(void)
 
 void AppCommunicator::deleteRunningFile(void)
 {
+    QString watchDirectory = QString(TARGET_PATH) + "/NOWALuaScript/bin/";
+    QDir dir(watchDirectory);
+
+    // Check if the directory exists
+    if (dir.exists())
+    {
+        // List all files with ".xml" extension in the directory
+        QStringList xmlFiles = dir.entryList(QStringList() << "*.xml", QDir::Files);
+
+        // Remove each XML file
+        for (const QString& file : xmlFiles)
+        {
+            QString filePath = dir.filePath(file);
+            QFile::remove(filePath);
+        }
+    }
+
     // Delete the file after reading
     if (QFile::remove(this->runningFilePath))
     {

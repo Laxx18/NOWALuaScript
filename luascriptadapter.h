@@ -61,6 +61,8 @@ Q_SIGNALS:
 private:
     int findLuaScript(const QString& filePathName);
 
+    void resolveInheritance(QMap<QString, ClassData>& apiData);
+
     void appendInheritedMethods(QMap<QString, ClassData>& apiData, const QString& className, QSet<QString>& visited);
 private:
     QList<LuaScript*> luaScripts;

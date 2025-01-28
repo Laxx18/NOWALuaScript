@@ -159,6 +159,7 @@ void LuaEditorModelItem::detectVariables(void)
         this->detectLocalVariables(line, i + 1);
         this->detectGlobalVariables(line, i + 1);
         this->detectSingletons(line, i + 1);
+        this->detectFunctions(line, i + 1);
     }
 
     bool needThirdRound = false;
@@ -290,6 +291,27 @@ void LuaEditorModelItem::detectSingletons(const QString& line, int lineNumber)
     }
 }
 
+void LuaEditorModelItem::detectFunctions(const QString& line, int lineNumber)
+{
+    // Regular expression to detect function declarations
+    // Matches:
+    // - local function foo()
+    // - function foo()
+    // - function ClassName:MethodName()
+    QRegularExpression functionRegex(R"(function\s+([\w:]+)\s*\()");
+    QRegularExpressionMatch match = functionRegex.match(line);
+
+    if (match.hasMatch())
+    {
+        QString functionName = match.captured(1); // Extract the function name
+
+        // Determine the scope
+        QString scope = line.startsWith("local") ? "local" : "global";
+
+        // Add the function to the variable map
+        this->variableMap[functionName] = LuaVariableInfo{functionName, "function", lineNumber, scope};
+    }
+}
 
 void LuaEditorModelItem::handleCastAssignment(const QString& statement, int lineNumber)
 {

@@ -486,6 +486,12 @@ void LuaHighlighter::breakLine()
 
     this->cursor.beginEditBlock();
 
+    // Clear any active selection
+    if (true == this->cursor.hasSelection())
+    {
+        this->cursor.clearSelection();
+    }
+
     // Get the current block and determine the cursor's position within it
     QTextBlock currentBlock = this->cursor.block();
     int positionInBlock = this->cursor.position() - currentBlock.position();
@@ -513,6 +519,7 @@ void LuaHighlighter::breakLine()
 
     Q_EMIT insertingNewLineChanged(false); // Emit signal after the new line is inserted
 }
+
 
 void LuaHighlighter::clearSearch()
 {
@@ -559,6 +566,8 @@ void LuaHighlighter::replaceInTextEdit(const QString& searchText, const QString&
 
     this->searchText = searchText;
     this->replaceText = replaceText;
+    this->matchCount = 0;
+    this->currentMatchIndex = 0;
 
     // Rehighlight after making replacements to refresh the syntax highlighting
     rehighlight();
@@ -699,6 +708,12 @@ void LuaHighlighter::highlightBlock(const QString& text)
         {
             if (this->wholeWord && !this->isWholeWord(text, searchStart, this->searchText.length()))
             {
+                // If replaceText is not empty, replace the found text
+                if (!this->replaceText.isEmpty())
+                {
+                    this->replaceInBlock(searchStart);
+                }
+
                 searchStart += this->searchText.length();
                 continue;
             }
@@ -729,6 +744,12 @@ void LuaHighlighter::highlightBlock(const QString& text)
             {
                 // Highlight all matches if not in "continue" mode
                 setFormat(searchStart, this->searchText.length(), searchFormat);
+            }
+
+            // If replaceText is not empty, replace the found text
+            if (!this->replaceText.isEmpty())
+            {
+                this->replaceInBlock(searchStart);
             }
 
             searchStart += this->searchText.length();
