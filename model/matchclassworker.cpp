@@ -255,6 +255,23 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
         lineCursorPos = currentLine.size();
     }
 
+    // If there is any of this operators involved in the line, easy case: The text after the operation is just interesing, the rest is dismissed
+    QRegularExpression regex(R"(.*[\+\-\=\!\>\<\~\/]=?\s*(.*)$)");
+    QRegularExpressionMatch matchOperators = regex.match(currentLine);
+
+    if (matchOperators.hasMatch())
+    {
+        currentLine = matchOperators.captured(1);
+        if (true == currentLine.isEmpty())
+        {
+            this->forConstant = false;
+            this->forVariable = false;
+            this->forFunctionParameters = false;
+            return "";
+        }
+        lineCursorPos = currentLine.size();
+    }
+
     QChar currentCharAtCursor = currentLine[lineCursorPos - 1];
     if (')' == currentCharAtCursor)
     {
@@ -409,6 +426,14 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     QString wholeTextUpToCursor = this->currentText.left(this->cursorPosition);
     int wholeLastNewlinePos = wholeTextUpToCursor.lastIndexOf('\n');
     QString wholeCurrentLine = wholeTextUpToCursor.mid(wholeLastNewlinePos + 1);
+
+    matchOperators = regex.match(wholeCurrentLine);
+
+    if (matchOperators.hasMatch())
+    {
+        wholeCurrentLine = matchOperators.captured(1);
+    }
+
     // Extract text up to the first unmatched parenthesis if needed
     QString leftFreeCurrentLine = currentLine;
     int upToIndex = wholeCurrentLine.lastIndexOf(currentLine);
@@ -544,9 +569,12 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                             // If the variable position is less than or equal to the cursor position, the matched horizontal chain type has been found
                             if (horizontalChainTypeInfo.position <= lineCursorPos)
                             {
-                                this->matchedClassName = horizontalChainTypeInfo.chainType;
-                                foundChainType = true;
-                                break;
+                                if (false == this->isLuaNativeType(horizontalChainTypeInfo.chainType))
+                                {
+                                    this->matchedClassName = horizontalChainTypeInfo.chainType;
+                                    foundChainType = true;
+                                    break;
+                                }
                             }
                         }
                         if (true == foundChainType)
@@ -614,6 +642,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
             {
                 this->forVariable = false;
                 this->forConstant = false;
+                isMatched = false;
                 const auto& methods = ApiModel::instance()->getMethodsForClassName(rootClassName);
 
                 for (const QVariant& methodVariant : methods)
@@ -626,7 +655,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
 
                         if (true == this->forFunctionParameters)
                         {
-                            if (rootClassName == this->matchedClassName && "()" == args)
+                            if (/*rootClassName == this->matchedClassName &&*/ "()" == args)
                             {
                                 QString valueType = methodMap["valuetype"].toString();
                                 if (false == this->isLuaNativeType(valueType))
@@ -685,6 +714,12 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
                         break;
                     }
                 }
+
+                if (false == isMatched)
+                {
+                    this->forVariable = true;
+                }
+
             }
             else if (lastDelimiter == '.')
             {
@@ -869,6 +904,7 @@ bool MatchClassWorker::handleInsideFunctionParameters(void)
     {
         this->isProcessing = false;
         QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter", Qt::QueuedConnection);
+        ApiModel::instance()->closeIntellisense();
         return false;
     }
 
@@ -879,6 +915,7 @@ bool MatchClassWorker::handleInsideFunctionParameters(void)
     {
         this->isProcessing = false;
         QMetaObject::invokeMethod(ApiModel::instance(), "signal_noHighlightFunctionParameter", Qt::QueuedConnection);
+        ApiModel::instance()->closeIntellisense();
         return false;
     }
 

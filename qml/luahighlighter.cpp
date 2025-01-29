@@ -41,7 +41,7 @@ LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
     keywordFormat.setForeground(QColor("#00008B"));  // Navy Blue
 
     // Keywords pattern
-    rule.pattern = QRegularExpression("\\b(if|else|while|for|end|function|local|return|do|then|break|in|repeat|until)\\b");
+    rule.pattern = QRegularExpression("\\b(if|else|while|for|end|function|local|return|do|then|break|in|repeat|until|and|or|not)\\b");
     rule.format = keywordFormat;
     this->highlightingRules.append(rule);
 
