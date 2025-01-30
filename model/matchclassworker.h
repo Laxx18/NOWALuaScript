@@ -25,6 +25,8 @@ Q_SIGNALS:
 private:
     QString handleCurrentLine(const QString& segment, bool& handleOuterSegment);
 
+    QString adjustStartAfterLogicalOperators(const QString& line);
+
     bool isLuaNativeType(const QString& typeName);
 
     int findUnmatchedOpenBracket(const QString& line, int cursorPos);

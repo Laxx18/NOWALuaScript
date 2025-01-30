@@ -120,6 +120,7 @@ void MatchClassWorker::process(void)
         else
         {
             ApiModel::instance()->closeIntellisense();
+            this->forFunctionParameters = false;
         }
     }
 
@@ -262,6 +263,21 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     if (matchOperators.hasMatch())
     {
         currentLine = matchOperators.captured(1);
+        if (true == currentLine.isEmpty())
+        {
+            this->forConstant = false;
+            this->forVariable = false;
+            this->forFunctionParameters = false;
+            return "";
+        }
+        lineCursorPos = currentLine.size();
+    }
+
+    // If there is any of and, or, not operators involved in the line, easy case: The text after the operation is just interesing, the rest is dismissed
+    QString tempCurrentLine = currentLine;
+    currentLine = this->adjustStartAfterLogicalOperators(tempCurrentLine);
+    if (tempCurrentLine != currentLine)
+    {
         if (true == currentLine.isEmpty())
         {
             this->forConstant = false;
@@ -432,6 +448,14 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     if (matchOperators.hasMatch())
     {
         wholeCurrentLine = matchOperators.captured(1);
+        lineCursorPos = wholeCurrentLine.size();
+    }
+
+    tempCurrentLine = wholeCurrentLine;
+    wholeCurrentLine = this->adjustStartAfterLogicalOperators(tempCurrentLine);
+    if (tempCurrentLine != wholeCurrentLine)
+    {
+        lineCursorPos = wholeCurrentLine.size();
     }
 
     // Extract text up to the first unmatched parenthesis if needed
@@ -762,6 +786,25 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     qDebug() << "Rest Typed:" << this->restTyped;
 
     return currentLine;
+}
+
+QString MatchClassWorker::adjustStartAfterLogicalOperators(const QString& line)
+{
+    QStringList operators = {" and", " or", " not"};
+    int lastPos = -1;
+
+    // Find the last occurrence of any logical operator
+    for (const QString& op : operators)
+    {
+        int pos = line.lastIndexOf(op);
+        if (pos != -1 && pos + op.length() > lastPos)
+        {
+            lastPos = pos + op.length();
+        }
+    }
+
+    // If a logical operator was found, return the substring after it
+    return (lastPos != -1) ? line.mid(lastPos) : line;
 }
 
 bool MatchClassWorker::isLuaNativeType(const QString& typeName)
