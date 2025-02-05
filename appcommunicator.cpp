@@ -2,6 +2,7 @@
 #include "luascriptcontroller.h"
 
 #include <QGuiApplication>
+#include <QQuickWindow>
 #include <QDebug>
 
 #ifdef Q_OS_WIN
@@ -13,47 +14,43 @@
 #define TARGET_PATH ""
 #endif
 
+QString AppCommunicator::runningFilePath = "";
+
 AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScriptController, QObject* parent)
     : QObject(parent),
-    ptrLuaScriptController(ptrLuaScriptController)
+    ptrLuaScriptController(ptrLuaScriptController),
+    localServer(nullptr)
 {
-#if 0
-    this->watchFilePathName = QString(TARGET_PATH) + "/NOWALuaScript/bin/lua_script_data.xml";
-
-    if (QFileInfo::exists(this->watchFilePathName))
+    // Create a local server
+    this->localServer = new QLocalServer(this);
+    if (this->localServer->listen(serverName))
     {
-        qDebug() << "File exists. Adding to watch list.";
-        this->fileWatcher.addPath(this->watchFilePathName);
-
-        // Call the function when the file changes
-        this->readXmlFile(this->watchFilePathName);
+        connect(this->localServer, &QLocalServer::newConnection, this, &AppCommunicator::handleNewConnection);
+        qDebug() << "NOWALuaScript local server started.";
     }
     else
     {
-        qDebug() << "File does not exist. Watching directory for creation.";
-        this->fileWatcher.addPath(QFileInfo(this->watchFilePathName).absolutePath());
+        qDebug() << "Failed to start NOWALuaScript local server:" << this->localServer->errorString();
     }
-    connect(&this->fileWatcher, &QFileSystemWatcher::fileChanged, this, &AppCommunicator::onFileChanged);
-    connect(&this->fileWatcher, &QFileSystemWatcher::directoryChanged, this, &AppCommunicator::onDirectoryChanged);
-#else
+
     // Set the path to the directory instead of a specific file
     QString watchDirectory = QString(TARGET_PATH) + "/NOWALuaScript/bin/";
     this->fileWatcher.addPath(watchDirectory);
 
     // Connect to the directoryChanged signal
     connect(&fileWatcher, &QFileSystemWatcher::directoryChanged, this, [=](const QString& path)
-    {
-        QTimer::singleShot(100, [=]() {  // Adjust the delay as needed
-            QDir dir(watchDirectory);
-            QStringList xmlFiles = dir.entryList({"*.xml"}, QDir::Files);
-
-            for (const QString& fileName : xmlFiles)
             {
-                qDebug() << "Detected change in XML file:" << fileName;
-                this->readXmlFile(watchDirectory + "/" + fileName);
-            }
-        });
-    });
+                QTimer::singleShot(100, [=]() {  // Adjust the delay as needed
+                    QDir dir(watchDirectory);
+                    QStringList xmlFiles = dir.entryList({"*.xml"}, QDir::Files);
+
+                    for (const QString& fileName : xmlFiles)
+                    {
+                        qDebug() << "Detected change in XML file:" << fileName;
+                        this->readXmlFile(watchDirectory + "/" + fileName);
+                    }
+                });
+            });
 
 
     QDir dir(watchDirectory);
@@ -64,7 +61,14 @@ AppCommunicator::AppCommunicator(QSharedPointer<LuaScriptController> ptrLuaScrip
         qDebug() << "Detected change in XML file:" << fileName;
         this->readXmlFile(watchDirectory + "/" + fileName);
     }
-#endif
+}
+
+AppCommunicator::~AppCommunicator()
+{
+    if (nullptr != this->localServer)
+    {
+        this->localServer->close();
+    }
 }
 
 void AppCommunicator::onFileChanged(const QString& path)
@@ -119,52 +123,6 @@ void AppCommunicator::showWindowsMessageBox(const QString &title, const QString 
         );
 #endif
 }
-
-
-// bool AppCommunicator::nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result)
-// {
-//     Q_UNUSED(result)
-// #ifdef Q_OS_WIN
-//     if (eventType == "windows_generic_MSG")
-//     {
-//         MSG* msg = static_cast<MSG*>(message);
-//         if (msg->message == WM_COPYDATA)
-//         {
-//             COPYDATASTRUCT* cds = reinterpret_cast<COPYDATASTRUCT*>(msg->lParam);
-//             if (cds)
-//             {
-//                 // Parse the received data
-//                 QString receivedData = QString::fromUtf8(static_cast<char*>(cds->lpData));
-
-//                 // Split the received data into message ID and Lua script path
-//                 QStringList parts = receivedData.split('|');
-//                 if (parts.size() == 2)
-//                 {
-//                     QString messageId = parts[0];
-//                     QString receivedLuaScriptPath = parts[1];
-
-//                     // Check for your custom message ID
-//                     if (messageId == "LuaScriptPath")
-//                     {
-//                         // Handle the Lua script path
-//                         qDebug() << "Received Lua script path:" << receivedLuaScriptPath;
-
-//                         // Show Windows MessageBox
-//                         // showWindowsMessageBox("Received via sendMessage", "Received Lua script path: " + receivedLuaScriptPath);
-
-//                         // If NOWALuaScript.exe is opened, a message is send out from NOWA-Design with a lua path. Add it!
-//                         this->ptrLuaScriptController->slot_createLuaScript(receivedLuaScriptPath);
-
-//                         // Emit signals or trigger actions in NOWALuaScript
-//                         return true;  // Message handled
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// #endif
-//     return false;
-// }
 
 void AppCommunicator::readXmlFile(const QString& filePath)
 {
@@ -262,9 +220,10 @@ void AppCommunicator::readXmlFile(const QString& filePath)
 bool AppCommunicator::isInstanceRunning(void)
 {
     // Define the path for the "NOWALuaScript.running" file
-    this->runningFilePath = QString(TARGET_PATH) + "/NOWALuaScript/bin/NOWALuaScript.running";
+    AppCommunicator::runningFilePath = QString(TARGET_PATH) + "/NOWALuaScript/bin/NOWALuaScript.running";
 
-    QFile runningFile(this->runningFilePath);
+#if 0
+    QFile runningFile(AppCommunicator::runningFilePath);
     if (runningFile.open(QIODevice::ReadOnly))
     {
         return true;
@@ -278,7 +237,19 @@ bool AppCommunicator::isInstanceRunning(void)
     }
     else
     {
-        qWarning() << "Failed to create running file at" << runningFilePath;
+        qWarning() << "Failed to create running file at" << AppCommunicator::runningFilePath;
+    }
+    return false;
+#endif
+
+    QLocalSocket socket;
+    socket.connectToServer(AppCommunicator::serverName);
+
+    if (socket.waitForConnected(100))
+    {
+        // Another instance is running
+        socket.disconnectFromServer();
+        return true;
     }
 
     return false;
@@ -286,7 +257,7 @@ bool AppCommunicator::isInstanceRunning(void)
 
 QString AppCommunicator::getRunningFilePath(void) const
 {
-    return this->runningFilePath;
+    return AppCommunicator::runningFilePath;
 }
 
 void AppCommunicator::deleteCommunicationFile(void)
@@ -319,8 +290,52 @@ void AppCommunicator::deleteRunningFile(void)
     }
 
     // Delete the file after reading
-    if (QFile::remove(this->runningFilePath))
+    if (QFile::remove(AppCommunicator::runningFilePath))
     {
         qDebug() << "Running file deleted successfully.";
     }
+}
+
+void AppCommunicator::sendFileToRunningInstance(const QString& filePath)
+{
+    QLocalSocket socket;
+    socket.connectToServer(AppCommunicator::serverName);
+
+    if (socket.waitForConnected(100))
+    {
+        QTextStream stream(&socket);
+        stream << filePath << Qt::endl;
+        socket.flush();
+        socket.waitForBytesWritten();
+        qDebug() << "Sent file path to running instance:" << filePath;
+        socket.disconnectFromServer();
+    }
+    else
+    {
+        qDebug() << "Failed to connect to running instance";
+    }
+}
+
+void AppCommunicator::handleNewConnection()
+{
+    QLocalSocket *clientConnection = localServer->nextPendingConnection();
+    if (!clientConnection)
+    {
+        return;
+    }
+
+    connect(clientConnection, &QLocalSocket::disconnected, clientConnection, &QLocalSocket::deleteLater);
+
+    clientConnection->waitForReadyRead(100); // Ensure the message is received
+    QString filePath = QString::fromUtf8(clientConnection->readAll()).trimmed();
+
+    if (!filePath.isEmpty())
+    {
+        qDebug() << "Received file via IPC:" << filePath;
+
+        // Send to LuaScriptController
+        Q_EMIT fileReceived(filePath);
+    }
+
+    clientConnection->disconnectFromServer();
 }

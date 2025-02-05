@@ -11,7 +11,36 @@
 #include "model/apimodel.h"
 #include "qml/luaeditorqml.h"
 
+#include <QQuickWindow>
 #include <QDebug>
+
+void activateWindow(const QQmlApplicationEngine& engine)
+{
+    // Get the root object, which should be the ApplicationWindow or your main window component
+    QObject* rootObject = engine.rootObjects().first();
+
+    QQuickWindow* qmlWindow = qobject_cast<QQuickWindow*>(rootObject);
+    // Assuming you already have the QQuickWindow pointer (qmlWindow)
+    if (qmlWindow)
+    {
+        // Ensure the window is visible
+        qmlWindow->show();
+
+        // Bring the window to the front
+        qmlWindow->raise();
+
+        // Set the window to stay on top temporarily
+        qmlWindow->setFlag(Qt::WindowStaysOnTopHint, true);
+
+        // Request activation (focus)
+        qmlWindow->requestActivate();
+
+        // Temporarily force the window to stay on top
+        qmlWindow->setFlag(Qt::WindowStaysOnTopHint, false);
+
+        qmlWindow->showMaximized();
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -49,8 +78,6 @@ int main(int argc, char *argv[])
         initialLuaScriptPath = argv[1]; // First argument is the Lua script file path
         qDebug() << "Opening Lua script at:" << initialLuaScriptPath;
         // Handle the initial Lua script (open in editor)
-
-        // showWindowsMessageBox("Received via args Lua Script", "Received Lua script at: " + initialLuaScriptPath);
     }
 
     QSharedPointer<LuaScriptAdapter> ptrLuaScriptAdapter(new LuaScriptAdapter());
@@ -62,9 +89,29 @@ int main(int argc, char *argv[])
     Qt::QueuedConnection);
     engine.load(url);
 
-    // Install the native event filter
+#ifdef QT_NO_DEBUG
+    if (true == AppCommunicator::isInstanceRunning())
+    {
+        if (false == initialLuaScriptPath.isEmpty())
+        {
+            activateWindow(engine);
+
+            AppCommunicator::sendFileToRunningInstance(initialLuaScriptPath);
+        }
+        return 0;
+    }
+#endif
+
     QSharedPointer<AppCommunicator> ptrAppCommunicator(new AppCommunicator(ptrLuaScriptController));
-    // app.installNativeEventFilter(ptrAppCommunicator.get());
+
+    QObject::connect(ptrAppCommunicator.get(), &AppCommunicator::fileReceived,
+                     [=, &engine](const QString& filePath)
+                     {
+                        ptrLuaScriptController.get()->slot_createLuaScript(filePath);
+
+                        activateWindow(engine);
+
+                     });
 
     // Delete any existing communication file at start
     ptrAppCommunicator->deleteCommunicationFile();
@@ -75,13 +122,7 @@ int main(int argc, char *argv[])
                         ptrAppCommunicator->deleteRunningFile();
                      });
 
-#ifdef QT_NO_DEBUG
-    if (true == ptrAppCommunicator->isInstanceRunning())
-    {
-        qDebug() << "Instance is already running.";
-        return 0;
-    }
-#endif
+
 
     // After QML is ready, set a potential first lua script and load it, if it comes from the args
     if (false == initialLuaScriptPath.isEmpty())

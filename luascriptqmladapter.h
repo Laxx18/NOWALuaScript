@@ -33,7 +33,6 @@ public:
      * @returns singleton instance of this
      */
     static QObject* getSingletonTypeProvider(QQmlEngine* pEngine, QJSEngine* pScriptEngine);
-
 Q_SIGNALS:
     void signal_requestSyntaxCheck(const QString& filePathName, const QString& luaCode);
     void signal_syntaxCheckResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
