@@ -115,6 +115,7 @@ private:
     QString currentText;
     QString currentLineTextVariable;
     bool isInMatchedFunctionProcessing;
+    bool doesUndoRedo;
 };
 
 #endif // LUAEDITORQML_H

@@ -24,7 +24,8 @@ LuaEditorQml::LuaEditorQml(QQuickItem* parent)
     oldCursorPosition(-1),
     cursorPosition(0),
     isInMatchedFunctionProcessing(false),
-    charDeleted(false)
+    charDeleted(false),
+    doesUndoRedo(false)
 {
     connect(this, &QQuickItem::parentChanged, this, &LuaEditorQml::onParentChanged);
 
@@ -107,6 +108,7 @@ void LuaEditorQml::setModel(LuaEditorModelItem* luaEditorModelItem)
         this->highlighter->undo();
         this->resetTextAfterColon();
         this->resetTextAfterDot();
+        this->doesUndoRedo = true;
     });
 
     connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_redo, this, [this] {
@@ -114,6 +116,7 @@ void LuaEditorQml::setModel(LuaEditorModelItem* luaEditorModelItem)
         this->highlighter->redo();
         this->resetTextAfterColon();
         this->resetTextAfterDot();
+        this->doesUndoRedo = true;
     });
 
     connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_sendTextToEditor, this, [this](const QString& text) {
@@ -230,14 +233,18 @@ void LuaEditorQml::setCurrentText(const QString& currentText)
         this->cursorPosition = currentText.length();
     }
 
-    // Process variable typing
-    this->processVariableBeingTyped();
-
-    // Handle function and parameter processing
-    if (!this->processFunctionBeingTyped())
+    if (false == this->doesUndoRedo)
     {
-        this->processFunctionParametersBeingTyped();
+        // Process variable typing
+        this->processVariableBeingTyped();
+
+        // Handle function and parameter processing
+        if (!this->processFunctionBeingTyped())
+        {
+            this->processFunctionParametersBeingTyped();
+        }
     }
+    this->doesUndoRedo = false;
 
     // Emit signal to notify about the text change
     Q_EMIT currentTextChanged();

@@ -151,6 +151,8 @@ Window
                     onClicked:
                     {
                         root.visible = false;
+                        NOWALuaEditorModel.setSelectedSearchText("");
+                        searchField.text = "";
                         NOWALuaEditorModel.clearSearch();
                     }
                 }
