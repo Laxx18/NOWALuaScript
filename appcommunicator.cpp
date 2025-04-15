@@ -204,7 +204,7 @@ void AppCommunicator::readXmlFile(const QString& filePath)
         this->ptrLuaScriptController->slot_createLuaScript(filePathName);
     }
 
-#if 0
+#if 1
     // Delete the file after reading
     if (QFile::remove(filePath))
     {

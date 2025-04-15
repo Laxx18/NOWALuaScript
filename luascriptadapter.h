@@ -59,6 +59,8 @@ Q_SIGNALS:
     void signal_luaApiPrepareResult(bool silent, bool success, const QString& message);
 
 private:
+    QStringList splitPathTail(const QString& path, int segmentCount = 2);
+
     int findLuaScript(const QString& filePathName);
 
     void resolveInheritance(QMap<QString, ClassData>& apiData);
