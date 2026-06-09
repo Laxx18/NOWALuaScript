@@ -650,8 +650,9 @@ bool LuaEditorQml::processVariableBeingTyped(void)
 
 bool LuaEditorQml::processFunctionBeingTyped(void)
 {
-    this->isAfterColon = false;
-    this->isAfterDot = false;
+    // ── Do NOT reset isAfterColon / isAfterDot here any more ────────────────
+    // handleKeywordPressed() set them on the keypress; we must not clobber them
+    // before we have actually re-detected whether they still apply.
 
     int tempCursorPosition = this->cursorPosition;
     QString tempCurrentText = this->currentText;
@@ -662,31 +663,31 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
 
     currentLineText = currentLineText.trimmed();
 
+    // C++ scope-resolution operator — definitely not a method call
     if (currentLineText.contains("::"))
     {
+        this->isAfterColon = false;
+        this->isAfterDot   = false;
         return false;
     }
 
-    // Check for the last occurrence of `:` or `.`
+    // ── Find the dominant symbol ─────────────────────────────────────────────
     int colonPos = currentLineText.lastIndexOf(':');
-    int dotPos = currentLineText.lastIndexOf('.');
+    int dotPos   = currentLineText.lastIndexOf('.');
     int commaPos = currentLineText.lastIndexOf(',');
 
-    int lineCursorPos = this->cursorPosition - (lastNewlinePos + 1);
-
-    // Determine the closer symbol and its type
-    int symbolPos = -1;
+    int  symbolPos     = -1;
     bool isForConstant = false;
 
     if (colonPos > dotPos)
     {
-        symbolPos = colonPos;
-        isForConstant = false; // It's a class function
+        symbolPos     = colonPos;
+        isForConstant = false;   // method call
     }
     else if (dotPos > colonPos)
     {
-        symbolPos = dotPos;
-        isForConstant = true; // It's a constant
+        symbolPos     = dotPos;
+        isForConstant = true;    // constant / field access
     }
 
     if (commaPos > symbolPos)
@@ -694,31 +695,44 @@ bool LuaEditorQml::processFunctionBeingTyped(void)
         symbolPos = commaPos;
     }
 
-    if (symbolPos == -1/* || symbolPos == currentLineText.size() - 1*/)
+    if (symbolPos == -1)
     {
-        return false; // No `:` or `.` or it's at the end
-    }
-
-    QString afterSymbol = currentLineText.mid(symbolPos);
-
-    // Ensure we have valid characters after the symbol
-    QRegularExpression functionNamePattern(R"(^[:.a-zA-Z_,\s][a-zA-Z0-9_:.,\s]*$)");
-    if (!functionNamePattern.match(afterSymbol).hasMatch())
-    {
+        // No ':' or '.' found in this line at all.
+        // The flags were set by handleKeywordPressed; let its own cursor-jump
+        // logic clean them up rather than forcing them false here.
         return false;
     }
 
-    // Check if there is an opening parenthesis after the symbol
-    if (currentLineText.indexOf('(', symbolPos) != -1)
+    // ── Validate the text after the symbol ──────────────────────────────────
+    QString afterSymbol = currentLineText.mid(symbolPos);
+
+    // Cache regex as static so it is compiled exactly once across all calls.
+    static const QRegularExpression functionNamePattern(
+        R"(^[:.a-zA-Z_,\s][a-zA-Z0-9_:.,\s]*$)");
+
+    if (!functionNamePattern.match(afterSymbol).hasMatch())
     {
-        return false; // Already has an opening parenthesis, not typing a function
+        // Invalid characters after the symbol — definitely not a function name
+        this->isAfterColon = false;
+        this->isAfterDot   = false;
+        return false;
     }
 
-    // Function or constant detected
+    // An opening parenthesis after the symbol means the function call is already
+    // complete; the user is now typing parameters, not the function name.
+    if (currentLineText.indexOf('(', symbolPos) != -1)
+    {
+        this->isAfterColon = false;
+        this->isAfterDot   = false;
+        return false;
+    }
+
+    // ── Detection succeeded — update state and show intellisense ────────────
     this->typedAfterColon = afterSymbol;
-    this->isAfterColon = !isForConstant;
-    this->isAfterDot = isForConstant;
-    this->showIntelliSenseContextMenuAtCursor(isForConstant, false, tempCurrentText, tempCursorPosition, this->typedAfterColon);
+    this->isAfterColon    = !isForConstant;
+    this->isAfterDot      =  isForConstant;
+    this->showIntelliSenseContextMenuAtCursor(
+        isForConstant, false, tempCurrentText, tempCursorPosition, this->typedAfterColon);
     return true;
 }
 

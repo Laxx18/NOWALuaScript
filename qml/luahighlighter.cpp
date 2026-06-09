@@ -64,14 +64,14 @@ LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
 
 void LuaHighlighter::setErrorLine(int line, int start, int end)
 {
-    if (this->oldErrorLine != this->errorLine)
+    if (this->errorLine == line && this->errorStart == start && this->errorEnd == end)
     {
-        this->errorLine = line;
-        this->errorStart = start;
-        this->errorEnd = end;
-        this->rehighlight(); // Rehighlight the document to apply changes
-        this->oldErrorLine = this->errorLine;
+        return;  // Same error, no need to rehighlight
     }
+    this->errorLine  = line;
+    this->errorStart = start;
+    this->errorEnd   = end;
+    this->rehighlight();
 }
 
 void LuaHighlighter::clearErrors()
@@ -401,32 +401,36 @@ void LuaHighlighter::setCursorPosition(int cursorPosition)
 void LuaHighlighter::addTabToSelection()
 {
     this->cursor.beginEditBlock();
-    QTextBlock startBlock = this->cursor.block();
-    QTextBlock endBlock = this->cursor.block();  // Default to the current block
 
+    bool isMultiLine = false;
     if (this->cursor.hasSelection())
     {
-        startBlock = this->cursor.document()->findBlock(this->cursor.selectionStart());
-        endBlock = this->cursor.document()->findBlock(this->cursor.selectionEnd());
+        QTextBlock sb = this->cursor.document()->findBlock(this->cursor.selectionStart());
+        QTextBlock eb = this->cursor.document()->findBlock(this->cursor.selectionEnd());
+        isMultiLine = (sb != eb);
     }
 
-    QString indent = QString(4, ' ');  // Create a string with 4 spaces
+    QString indent = QString(4, ' ');
 
-    // Iterate over each selected block and add 4 spaces at the start of each block
-    for (QTextBlock block = startBlock; block != endBlock.next(); block = block.next())
+    if (isMultiLine)
     {
-        QTextCursor blockCursor(block);
-        blockCursor.movePosition(QTextCursor::StartOfBlock);
-
-        // Select the entire block and add 4 spaces
-        blockCursor.insertText(indent);
+        // Indent all selected blocks from their start
+        QTextBlock startBlock = this->cursor.document()->findBlock(this->cursor.selectionStart());
+        QTextBlock endBlock   = this->cursor.document()->findBlock(this->cursor.selectionEnd());
+        for (QTextBlock block = startBlock; block != endBlock.next(); block = block.next())
+        {
+            QTextCursor bc(block);
+            bc.movePosition(QTextCursor::StartOfBlock);
+            bc.insertText(indent);
+        }
     }
-
-    // Ensure cursor is restored back to where it was before the operation
-    if (this->cursor.hasSelection())
+    else
     {
-        this->cursor.setPosition(this->cursor.selectionStart());
-        this->cursor.setPosition(this->cursor.selectionEnd(), QTextCursor::KeepAnchor);
+        // No selection or intra-line: insert tab at current cursor position
+        QTextCursor c = this->cursor;
+        if (c.hasSelection()) c.clearSelection();
+        c.insertText(indent);
+        this->cursor = c;
     }
 
     this->cursor.endEditBlock();
@@ -533,13 +537,14 @@ void LuaHighlighter::clearSearch()
 
 void LuaHighlighter::searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitve)
 {
-    this->searchText = searchText; // Store the search text as a member variable
+    this->searchText = searchText;
     this->wholeWord = wholeWord;
     this->caseSensitiv = caseSensitve;
     this->matchCount = 0;
     this->currentMatchIndex = 0;
     this->searchContinueMode = false;
     this->rehighlight();
+    Q_EMIT resultSearchMatchCount(this->matchCount);
 }
 
 void LuaHighlighter::searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitve)
@@ -559,18 +564,30 @@ void LuaHighlighter::searchContinueInTextEdit(const QString& searchText, bool wh
 
 void LuaHighlighter::replaceInTextEdit(const QString& searchText, const QString& replaceText)
 {
-    if (searchText.isEmpty())
-    {
-        return; // Exit if search text is empty
-    }
+    if (searchText.isEmpty()) return;
 
-    this->searchText = searchText;
-    this->replaceText = replaceText;
-    this->matchCount = 0;
+    this->searchText   = searchText;
+    this->replaceText  = "";          // Clear so highlightBlock never calls replaceInBlock
+    this->matchCount   = 0;
     this->currentMatchIndex = 0;
 
-    // Rehighlight after making replacements to refresh the syntax highlighting
-    rehighlight();
+    // --- Do all replacements HERE, before rehighlight ---
+    QTextCursor cursor(this->document());
+    cursor.beginEditBlock();
+    QTextDocument::FindFlags flags;
+    if (this->caseSensitiv) flags |= QTextDocument::FindCaseSensitively;
+    if (this->wholeWord)    flags |= QTextDocument::FindWholeWords;
+
+    while (true)
+    {
+        cursor = this->document()->find(searchText, cursor, flags);
+        if (cursor.isNull()) break;
+        cursor.insertText(replaceText);
+    }
+    cursor.endEditBlock();
+
+    // Now rehighlight to show remaining matches / clear old ones
+    this->rehighlight();
 }
 
 void LuaHighlighter::replaceInBlock(int searchStart)
@@ -755,11 +772,7 @@ void LuaHighlighter::highlightBlock(const QString& text)
             searchStart += this->searchText.length();
         }
 
-        // Emit total match count after processing all blocks
-        if (false == this->searchContinueMode)
-        {
-            Q_EMIT resultSearchMatchCount(this->matchCount);
-        }
+
     }
 }
 

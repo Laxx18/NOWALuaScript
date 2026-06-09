@@ -1049,7 +1049,6 @@ void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, bool forF
             this->matchClassThread->quit();  // Quit the thread
         });
 
-        QObject::connect(this->matchClassWorker, &MatchClassWorker::finished, this->matchClassWorker, &MatchClassWorker::deleteLater);
         QObject::connect(this->matchClassThread, &QThread::finished, this->matchClassThread, &QThread::deleteLater);
 
         // Start processing
