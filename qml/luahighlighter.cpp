@@ -273,7 +273,11 @@ void LuaHighlighter::undo()
     this->clearSearch();
     if (!this->cursor.isNull() && this->cursor.document())
     {
-        this->cursor.document()->undo();
+        // The QTextCursor overload moves this->cursor to where the undo was applied.
+        // We then push that position back to the QML TextEdit so onCursorRectangleChanged
+        // fires and the Flickable scrolls to the undo location.
+        this->cursor.document()->undo(&this->cursor);
+        this->luaEditorTextEdit->setProperty("cursorPosition", this->cursor.position());
     }
 }
 
@@ -282,7 +286,8 @@ void LuaHighlighter::redo()
     this->clearSearch();
     if (!this->cursor.isNull() && this->cursor.document())
     {
-        this->cursor.document()->redo();
+        this->cursor.document()->redo(&this->cursor);
+        this->luaEditorTextEdit->setProperty("cursorPosition", this->cursor.position());
     }
 }
 

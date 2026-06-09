@@ -18,7 +18,7 @@ Window
     // No Qt.WindowStaysOnTopHint — that was overlapping every other application on the OS.
     // Qt.Dialog ties the window to its parent and raises with it.
     // Set transientParent = <your ApplicationWindow id> from outside so the OS groups them.
-    flags: Qt.Dialog;
+    flags: Qt.Window;
 
     property bool caseSensitive: false;
     property bool wholeWord: false;

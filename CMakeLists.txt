@@ -4,28 +4,56 @@ project(NOWALuaScript VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-
-# Option to specify the Qt bin directory
-# Note: In Qt Creator goto project -> filter search for qt_bin_dir and specify the bin diretory there.
-set(QT_BIN_DIR "E:/Qt/6.7.2/mingw_64/bin" CACHE STRING "Path to the Qt bin directory")
-
 # Prompt the user to specify TARGET_PATH
 set(TARGET_PATH "" CACHE PATH "Specify the target folder path for the project")
 
-# Check if TARGET_PATH is set
 if(NOT TARGET_PATH)
-    message(FATAL_ERROR "TARGET_PATH is not set. Please set it using -DTARGET_PATH=/path/to/your/folder where the deployed application shall be built")
+    message(FATAL_ERROR "TARGET_PATH is not set. Please set it using -DTARGET_PATH=/path/to/your/folder")
 endif()
 
-# Use TARGET_PATH in your CMake script
 message(STATUS "TARGET_PATH is set to: ${TARGET_PATH}")
-
-# Add TARGET_PATH as a preprocessor definition
 add_definitions(-DTARGET_PATH="${TARGET_PATH}")
 
 find_package(Qt6 REQUIRED COMPONENTS Quick Concurrent)
 
-# Manually specifies the library path
+# ---------------------------------------------------------------------------
+# Auto-detect Qt bin directory from the Qt6 CMake package location.
+# Qt6_DIR is typically:  C:/Qt/6.8.x/<kit>/lib/cmake/Qt6
+# We walk up three levels to reach the kit root, then append /bin.
+# ---------------------------------------------------------------------------
+get_filename_component(QT_KIT_ROOT "${Qt6_DIR}" DIRECTORY)   # .../lib/cmake
+get_filename_component(QT_KIT_ROOT "${QT_KIT_ROOT}" DIRECTORY) # .../lib
+get_filename_component(QT_KIT_ROOT "${QT_KIT_ROOT}" DIRECTORY) # .../llvm-mingw_64 (kit root)
+set(QT_BIN_DIR_DETECTED "${QT_KIT_ROOT}/bin")
+
+set(QT_BIN_DIR "${QT_BIN_DIR_DETECTED}" CACHE STRING "Path to the Qt bin directory (auto-detected)")
+message(STATUS "QT_BIN_DIR: ${QT_BIN_DIR}")
+
+# ---------------------------------------------------------------------------
+# Auto-detect the LLVM-MinGW toolchain bin directory.
+# The toolchain lives in <Qt install root>/Tools/llvm-mingw*/bin.
+# We go two more levels up from the kit root to reach the Qt install root
+# (e.g. C:/Qt), then glob for the llvm-mingw folder inside Tools/.
+# ---------------------------------------------------------------------------
+get_filename_component(QT_VERSION_ROOT "${QT_KIT_ROOT}" DIRECTORY)   # C:/Qt/6.8.x
+get_filename_component(QT_INSTALL_ROOT "${QT_VERSION_ROOT}" DIRECTORY) # C:/Qt
+
+file(GLOB LLVM_DIRS "${QT_INSTALL_ROOT}/Tools/llvm-mingw*")
+
+if(LLVM_DIRS)
+    list(GET LLVM_DIRS 0 LLVM_FIRST_DIR)
+    set(LLVM_BIN_DIR_DETECTED "${LLVM_FIRST_DIR}/bin")
+else()
+    set(LLVM_BIN_DIR_DETECTED "")
+    message(WARNING "Could not auto-detect LLVM-MinGW toolchain under ${QT_INSTALL_ROOT}/Tools/. "
+                    "Set LLVM_BIN_DIR manually in CMake cache.")
+endif()
+
+set(LLVM_BIN_DIR "${LLVM_BIN_DIR_DETECTED}" CACHE STRING "Path to LLVM-MinGW toolchain bin dir (auto-detected)")
+message(STATUS "LLVM_BIN_DIR: ${LLVM_BIN_DIR}")
+
+# ---------------------------------------------------------------------------
+
 set(LUA_LIBRARIES "${CMAKE_SOURCE_DIR}/lua-5_2/lib/lua.lib")
 set(LUA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/lua-5_2/include")
 
@@ -90,34 +118,19 @@ install(TARGETS NOWALuaScript
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-#add_compile_definitions("SOURCE_ROOT=${CMAKE_SOURCE_DIR}")
-# Pass CMAKE_SOURCE_DIR as a preprocessor definition
 target_compile_definitions(NOWALuaScript PRIVATE
     SOURCE_ROOT="${CMAKE_SOURCE_DIR}"
-    $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT> # Define QT_NO_DEBUG_OUTPUT only in Release mode
-    $<$<NOT:$<CONFIG:Release>>:QT_DEBUG_OUTPUT> # Optional: Define QT_DEBUG_OUTPUT in other modes
+    $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>
+    $<$<NOT:$<CONFIG:Release>>:QT_DEBUG_OUTPUT>
 )
-
-# Generate the deployment script for QML-based Qt6 applications
-#qt_generate_deploy_qml_app_script(
-#    TARGET NOWALuaScript
-#    OUTPUT_SCRIPT deploy_script
-#)
-
-# Install the deploy script and resources
-#install(SCRIPT ${deploy_script})
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
 
-    # Copy DLLs based on the user-defined QT_BIN_DIR
     if(WIN32)
-        # Find all .dll files in the source folder
+        # Collect all DLLs from the correct Qt kit bin folder
         file(GLOB DLL_FILES "${QT_BIN_DIR}/*.dll")
 
-        # Create a list to store the commands
         set(COPY_COMMANDS)
-
-        # Iterate over each DLL file and append copy commands
         foreach(DLL_FILE ${DLL_FILES})
             list(APPEND COPY_COMMANDS
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL_FILE}" "${CMAKE_BINARY_DIR}/bin"
@@ -125,26 +138,34 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
             )
         endforeach()
 
-        # Add a post-build command to copy each .dll file
         add_custom_command(TARGET NOWALuaScript POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Copying DLL files for Release build..."
             COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
             COMMAND ${CMAKE_COMMAND} -E echo "--->Create directory ${CMAKE_BINARY_DIR}/bin"
             ${COPY_COMMANDS}
-            # Copy thirdparty like lua
+
+            # Lua third-party DLL
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/lua-5_2/bin/Lua.dll" "${CMAKE_BINARY_DIR}/bin"
             COMMAND ${CMAKE_COMMAND} -E echo "----->Copy Lua.dll to ${CMAKE_BINARY_DIR}/bin"
-            # Copy exe from build/.../ to the bin dir
+
+            # LLVM runtime DLLs — required by Qt 6.8 LLVM-MinGW toolchain
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LLVM_BIN_DIR}/libc++.dll" "${CMAKE_BINARY_DIR}/bin"
+            COMMAND ${CMAKE_COMMAND} -E echo "----->Copy libc++.dll from ${LLVM_BIN_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LLVM_BIN_DIR}/libunwind.dll" "${CMAKE_BINARY_DIR}/bin"
+            COMMAND ${CMAKE_COMMAND} -E echo "----->Copy libunwind.dll from ${LLVM_BIN_DIR}"
+
+            # Copy the built exe to bin
             COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:NOWALuaScript> "${CMAKE_BINARY_DIR}/bin"
             COMMAND ${CMAKE_COMMAND} -E echo "----->Copy TARGET_FILE $<TARGET_FILE:NOWALuaScript> to ${CMAKE_BINARY_DIR}/bin"
             COMMENT "Copying necessary Qt libraries and executable to the output directory"
-            # Copies missing necessary files via Qt script automatically
+
+            # windeployqt picks up remaining Qt plugins and QML imports
             COMMAND ${QT_BIN_DIR}/windeployqt --dir ${CMAKE_BINARY_DIR}/bin NOWALuaScript.exe --qmldir ${CMAKE_SOURCE_DIR}
-            COMMAND ${CMAKE_COMMAND} -E echo "----->windeployqt from ${QT_BIN_DIR}/windeployqt to ${CMAKE_BINARY_DIR}/bin NOWALuaScript.exe and qmldir from: ${CMAKE_SOURCE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E echo "----->windeployqt done"
             COMMENT "Deploying Qt DLLs and QML files using windeployqt"
         )
 
-        # Source and destination directories
+        # Copy everything to the final TARGET_PATH deployment folder
         set(SOURCE_DIR "${CMAKE_BINARY_DIR}/bin")
         set(DESTINATION_DIR "${TARGET_PATH}/NOWALuaScript/bin")
 
@@ -153,38 +174,26 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
             POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory ${DESTINATION_DIR}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${SOURCE_DIR} ${DESTINATION_DIR}
-            COMMENT "Copying all files and subdirectories from ${SOURCE_DIR} to ${DESTINATION_DIR} after build"
+            COMMENT "Copying all files to ${DESTINATION_DIR}"
         )
 
     elseif(APPLE)
-        # Similar setup for macOS
         add_custom_command(TARGET NOWALuaScript POST_BUILD
-                COMMAND ${QT_BIN_DIR}/macdeployqt $<TARGET_BUNDLE_DIR:NOWALuaScript> -qmldir=${CMAKE_SOURCE_DIR}/qml
-                COMMENT "Deploying Qt frameworks and QML files using macdeployqt"
+            COMMAND ${QT_BIN_DIR}/macdeployqt $<TARGET_BUNDLE_DIR:NOWALuaScript> -qmldir=${CMAKE_SOURCE_DIR}/qml
+            COMMENT "Deploying Qt frameworks using macdeployqt"
         )
     endif()
 
 endif()
 
-# Define the icon files for each platform
+# Platform-specific app icon
 if(WIN32)
-    # Windows: Add the .ico file through a resource file
     set(APP_ICON_RESOURCE "${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.rc")
     target_sources(NOWALuaScript PRIVATE ${APP_ICON_RESOURCE})
 elseif(APPLE)
-    # macOS: Use the .icns file
     set(MACOSX_BUNDLE_ICON_FILE "NOWALuaScript.icns")
     set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.icns" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
     target_sources(NOWALuaScript PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.icns")
 else()
-    # Linux: Install the .png file and ensure it is used in the .desktop file
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/NOWALuaScript.png" DESTINATION share/icons/hicolor/48x48/apps)
 endif()
-
-#message(STATUS "--->Executable path: ${CMAKE_BINARY_DIR}/NOWALuaScript.exe")
-#message(STATUS "--->Target file: $<TARGET_FILE:NOWALuaScript>")
-#message(STATUS "--->Bin path: ${CMAKE_BINARY_DIR}/bin")
-#message(STATUS "--->Copy path: ${Qt6_DIR}")
-#message(STATUS "--->Source path: ${CMAKE_SOURCE_DIR}")
-#message(STATUS "--->Install Prefix path: ${Qt6Core_INSTALL_PREFIX}")
-#message(STATUS "--->Deploy script path: ${deploy_script}")
