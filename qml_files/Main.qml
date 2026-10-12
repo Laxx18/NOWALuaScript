@@ -84,7 +84,7 @@ ApplicationWindow
 
     menuBar: MainMenu
     {
-
+        onProjectSearchRequested: root.openProjectSearch();
     }
 
     header: ToolBar
@@ -190,14 +190,153 @@ ApplicationWindow
             SplitView.minimumWidth: 150;
         }
 
-        StackLayout
+        // Right: The editors and below the results of the project search (Ctrl+Shift+F), if it is open.
+        // Attention: Formerly a vertical SplitView. With newer Qt versions the search view only got its minimum height there, so the result list
+        // was not visible. Now its height is set directly and can be changed with the handle above it.
+        ColumnLayout
         {
-            // NOTE: Do not change this names, as they are used for object matching in C++
-            id: luaEditorContainer;
-            objectName: "luaEditorContainer";
+            id: editorColumn;
 
             SplitView.fillWidth: true;
-            currentIndex: tabBar.currentIndex;
+            spacing: 0;
+
+            StackLayout
+            {
+                // NOTE: Do not change this names, as they are used for object matching in C++
+                id: luaEditorContainer;
+                objectName: "luaEditorContainer";
+
+                Layout.fillWidth: true;
+                Layout.fillHeight: true;
+                currentIndex: tabBar.currentIndex;
+            }
+
+            // Handle to change the height of the search view
+            Rectangle
+            {
+                Layout.fillWidth: true;
+                Layout.preferredHeight: 6;
+                visible: projectSearchView.visible;
+                color: searchResizeArea.containsMouse || searchResizeArea.pressed ? "#7FA7A7" : "#3A5F5F";
+
+                MouseArea
+                {
+                    id: searchResizeArea;
+
+                    property real pressY: 0;
+                    property real pressHeight: 0;
+
+                    anchors.fill: parent;
+                    hoverEnabled: true;
+                    cursorShape: Qt.SizeVerCursor;
+
+                    onPressed: (mouse) =>
+                    {
+                        searchResizeArea.pressY = mapToItem(editorColumn, mouse.x, mouse.y).y;
+                        searchResizeArea.pressHeight = projectSearchView.searchHeight;
+                    }
+
+                    onPositionChanged: (mouse) =>
+                    {
+                        if (pressed)
+                        {
+                            let y = mapToItem(editorColumn, mouse.x, mouse.y).y;
+                            projectSearchView.searchHeight = Math.max(120, Math.min(editorColumn.height - 150, searchResizeArea.pressHeight + searchResizeArea.pressY - y));
+                        }
+                    }
+                }
+            }
+
+            ProjectSearchView
+            {
+                id: projectSearchView;
+
+                property real searchHeight: 300;
+
+                visible: false;
+
+                Layout.fillWidth: true;
+                Layout.preferredHeight: projectSearchView.searchHeight;
+
+                onResultActivated: (filePathName, line, column, length) =>
+                {
+                    root.openSearchResult(filePathName, line, column, length);
+                }
+
+                onCloseRequested:
+                {
+                    projectSearchView.visible = false;
+                    let editor = root.currentEditor();
+                    if (editor)
+                    {
+                        editor.focusEditor();
+                    }
+                }
+            }
+        }
+    }
+
+    // Ctrl+Shift+F: Takes over the selected text or the word under the cursor
+    function openProjectSearch()
+    {
+        let proposal = "";
+        let editor = root.currentEditor();
+        if (editor)
+        {
+            proposal = editor.getSearchTextProposal();
+        }
+        projectSearchView.openSearch(proposal);
+    }
+
+    // Opens the lua script of a search result (or switches to its tab) and selects the match. The editor of a newly opened lua script
+    // is created a moment later, so it is waited for.
+    function openSearchResult(filePathName, line, column, length)
+    {
+        searchResultTimer.filePathName = filePathName;
+        searchResultTimer.line = line;
+        searchResultTimer.column = column;
+        searchResultTimer.length = length;
+        searchResultTimer.tries = 0;
+
+        NOWALuaEditorModel.requestAddLuaScript(filePathName);
+
+        if (!root.selectSearchResult())
+        {
+            searchResultTimer.start();
+        }
+    }
+
+    function selectSearchResult()
+    {
+        let editor = root.currentEditor();
+        if (editor && editor.model && editor.model.filePathName.toLowerCase() === searchResultTimer.filePathName.toLowerCase())
+        {
+            editor.selectInLine(searchResultTimer.line, searchResultTimer.column, searchResultTimer.length);
+            return true;
+        }
+        return false;
+    }
+
+    Timer
+    {
+        id: searchResultTimer;
+
+        property string filePathName: "";
+        property int line: 1;
+        property int column: 0;
+        property int length: 0;
+        property int tries: 0;
+
+        interval: 30;
+        repeat: true;
+
+        onTriggered:
+        {
+            searchResultTimer.tries++;
+            if (root.selectSearchResult() || searchResultTimer.tries > 50)
+            {
+                searchResultTimer.stop();
+            }
         }
     }
 

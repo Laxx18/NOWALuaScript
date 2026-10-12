@@ -6,6 +6,7 @@
         <file>qml_files/MainMenu.qml</file>
         <file>qml_files/SearchDialog.qml</file>
         <file>qml_files/ProjectView.qml</file>
+        <file>qml_files/ProjectSearchView.qml</file>
         <file>qml_files/IntelliSenseContextMenu.qml</file>
         <file>qml_files/MatchedFunctionContextMenu.qml</file>
         <file>qml_files/AboutDialog.qml</file>

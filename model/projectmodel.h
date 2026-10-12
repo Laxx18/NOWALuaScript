@@ -7,6 +7,7 @@
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QDir>
+#include <QVariantList>
 
 /**
  * @brief The project view on the left side: A folder is opened and all lua files below it are shown as tree. Folders without lua files are not shown.
@@ -27,6 +28,8 @@ public:
     Q_PROPERTY(QStringList recentProjects READ getRecentProjects NOTIFY recentProjectsChanged)
 
     Q_PROPERTY(int luaFileCount READ getLuaFileCount NOTIFY projectContentChanged)
+
+    Q_PROPERTY(bool isSearching READ getIsSearching NOTIFY isSearchingChanged)
 public:
     enum ProjectRoles
     {
@@ -67,6 +70,13 @@ public:
      * @brief Converts a file url (file:///C:/...) or a path with backslashes to a local path with slashes.
      */
     Q_INVOKABLE static QString toLocalPath(const QString& pathOrUrl);
+
+    /**
+     * @brief Searches the text in all lua files of the project (Ctrl+Shift+F). Without an opened project the open lua scripts are searched.
+     *        Open lua scripts are searched with their current content in the editor, also if it is not saved yet.
+     *        Runs in the background, the result comes via searchFinished.
+     */
+    Q_INVOKABLE void searchInProject(const QString& searchText, bool wholeWord, bool caseSensitive);
 public:
     explicit ProjectModel(QObject* parent = Q_NULLPTR);
 
@@ -83,6 +93,8 @@ public:
     QStringList getRecentProjects(void) const;
 
     int getLuaFileCount(void) const;
+
+    bool getIsSearching(void) const;
 public:
     /**
      * @brief instance is the getter used to receive the object of this singleton implementation.
@@ -108,6 +120,14 @@ Q_SIGNALS:
     void recentProjectsChanged();
 
     void projectError(const QString& message);
+
+    /**
+     * @brief The result of searchInProject. Each result is a map with: filePathName, relativePath, line (1 based), column, length,
+     *        preText, matchText, postText (the line around the match for the result list).
+     */
+    void searchFinished(const QString& searchText, const QVariantList& results, int searchedFileCount, bool truncated);
+
+    void isSearchingChanged();
 private:
     /**
      * @brief Adds the sub folders and lua files of the given folder. Returns true, if there is at least one lua file in it or below it.
@@ -141,6 +161,10 @@ private:
     QFileSystemWatcher folderWatcher;
     QTimer refreshTimer;
     QTimer autoSaveTimer;
+
+    // Each search gets a new number. The result of an older search, which finishes later, is ignored.
+    int searchGeneration;
+    bool isSearching;
 };
 
 #endif // PROJECTMODEL_H

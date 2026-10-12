@@ -12,6 +12,9 @@ MenuBar
     id: mainMenu;
     focus: true;
 
+    // Edit -> Search in Project (Ctrl+Shift+F), the view is in Main.qml
+    signal projectSearchRequested();
+
     Component.onCompleted:
     {
         mainMenu.forceActiveFocus();
@@ -379,6 +382,18 @@ MenuBar
             text: qsTr("Uncomment");
             icon.name: "text-comment";  // Might need to check availability
             onTriggered: NOWALuaEditorModel.unCommentLines();
+        }
+
+        MenuSeparator
+        {
+        }
+
+        Action
+        {
+            text: qsTr("Search in Project...");
+            shortcut: "Ctrl+Shift+F";
+            icon.name: "edit-find";
+            onTriggered: mainMenu.projectSearchRequested();
         }
     }
 

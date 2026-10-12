@@ -9,6 +9,9 @@
 #include <QJsonArray>
 #include <QUrl>
 #include <QCoreApplication>
+#include <QRegularExpression>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QDebug>
 
 ProjectModel* ProjectModel::ms_pInstance = Q_NULLPTR;
@@ -20,11 +23,183 @@ const int maxRecentProjects = 5;
 // Protection against e.g. opening "C:/" by accident
 const int maxFolderDepth = 12;
 const int maxWatchedFolders = 1000;
+// More results do not help anybody and make the result list slow
+const int maxSearchResults = 5000;
+// Length of the line text before and after the match in the result list
+const int maxSearchPreTextLength = 60;
+const int maxSearchPostTextLength = 160;
+
+struct SearchResult
+{
+    QVariantList results;
+    int searchedFileCount = 0;
+    bool truncated = false;
+};
+
+void collectLuaFiles(const QDir& dir, int depth, QStringList& luaFiles)
+{
+    if (depth > maxFolderDepth)
+    {
+        return;
+    }
+
+    const QFileInfoList subFolders = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& subFolderInfo : subFolders)
+    {
+        collectLuaFiles(QDir(subFolderInfo.absoluteFilePath()), depth + 1, luaFiles);
+    }
+
+    const QFileInfoList files = dir.entryInfoList(QStringList() << "*.lua", QDir::Files, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& fileInfo : files)
+    {
+        luaFiles.append(fileInfo.absoluteFilePath());
+    }
+}
+
+// Runs in a worker thread. Only gets copies, so that nothing of the gui thread is touched.
+SearchResult searchInFiles(const QString& rootFolder, const QList<QPair<QString, QString>>& openLuaScripts, const QString& searchText, bool wholeWord, bool caseSensitive)
+{
+    SearchResult searchResult;
+
+    QStringList filePathNames;
+    if (false == rootFolder.isEmpty())
+    {
+        collectLuaFiles(QDir(rootFolder), 0, filePathNames);
+    }
+
+    // Open lua scripts are searched with their content in the editor (maybe not saved yet). Open lua scripts outside of the project are searched too.
+    QHash<QString, QString> openContents;
+    for (const auto& openLuaScript : openLuaScripts)
+    {
+        const QString key = QDir::cleanPath(openLuaScript.first).toLower();
+        openContents.insert(key, openLuaScript.second);
+
+        bool isInList = false;
+        for (const QString& filePathName : std::as_const(filePathNames))
+        {
+            if (filePathName.toLower() == key)
+            {
+                isInList = true;
+                break;
+            }
+        }
+        if (false == isInList)
+        {
+            filePathNames.append(QDir::cleanPath(openLuaScript.first));
+        }
+    }
+
+    QString pattern = QRegularExpression::escape(searchText);
+    if (true == wholeWord)
+    {
+        pattern = "(?<![A-Za-z0-9_])" + pattern + "(?![A-Za-z0-9_])";
+    }
+    QRegularExpression regex(pattern, true == caseSensitive ? QRegularExpression::NoPatternOption : QRegularExpression::CaseInsensitiveOption);
+    if (false == regex.isValid())
+    {
+        return searchResult;
+    }
+
+    const QDir rootDir(rootFolder);
+
+    for (const QString& filePathName : std::as_const(filePathNames))
+    {
+        QString content;
+        auto it = openContents.constFind(filePathName.toLower());
+        if (it != openContents.constEnd())
+        {
+            content = it.value();
+        }
+        else
+        {
+            QFile file(filePathName);
+            if (false == file.open(QIODevice::ReadOnly | QIODevice::Text))
+            {
+                continue;
+            }
+            content = QString::fromUtf8(file.readAll());
+            file.close();
+        }
+
+        ++searchResult.searchedFileCount;
+
+        QString relativePath = filePathName;
+        if (false == rootFolder.isEmpty())
+        {
+            const QString relative = rootDir.relativeFilePath(filePathName);
+            if (false == relative.startsWith(".."))
+            {
+                relativePath = relative;
+            }
+        }
+
+        const QStringList lines = content.split('\n');
+        for (int lineIndex = 0; lineIndex < lines.size(); ++lineIndex)
+        {
+            QString lineText = lines.at(lineIndex);
+            if (true == lineText.endsWith('\r'))
+            {
+                lineText.chop(1);
+            }
+
+            QRegularExpressionMatchIterator matchIterator = regex.globalMatch(lineText);
+            while (true == matchIterator.hasNext())
+            {
+                const QRegularExpressionMatch match = matchIterator.next();
+                if (match.capturedLength() <= 0)
+                {
+                    continue;
+                }
+
+                if (searchResult.results.size() >= maxSearchResults)
+                {
+                    searchResult.truncated = true;
+                    return searchResult;
+                }
+
+                const int column = static_cast<int>(match.capturedStart());
+                const int length = static_cast<int>(match.capturedLength());
+
+                // Text before the match without the indentation and shortened, so that the match is always visible in the list
+                int preStart = 0;
+                while (preStart < column && true == lineText.at(preStart).isSpace())
+                {
+                    ++preStart;
+                }
+                QString preText = lineText.mid(preStart, column - preStart);
+                if (preText.size() > maxSearchPreTextLength)
+                {
+                    preText = QStringLiteral("...") + preText.right(maxSearchPreTextLength);
+                }
+                QString postText = lineText.mid(column + length);
+                if (postText.size() > maxSearchPostTextLength)
+                {
+                    postText = postText.left(maxSearchPostTextLength) + QStringLiteral("...");
+                }
+
+                QVariantMap result;
+                result["filePathName"] = filePathName;
+                result["relativePath"] = relativePath;
+                result["line"] = lineIndex + 1;
+                result["column"] = column;
+                result["length"] = length;
+                result["preText"] = preText;
+                result["matchText"] = lineText.mid(column, length);
+                result["postText"] = postText;
+                searchResult.results.append(result);
+            }
+        }
+    }
+
+    return searchResult;
+}
 }
 
 ProjectModel::ProjectModel(QObject* parent)
     : QStandardItemModel(parent),
-    luaFileCount(0)
+    luaFileCount(0),
+    searchGeneration(0),
+    isSearching(false)
 {
     this->loadRecentProjects();
 
@@ -445,6 +620,66 @@ QString ProjectModel::getProjectName(void) const
 QStringList ProjectModel::getRecentProjects(void) const
 {
     return this->recentProjects;
+}
+
+bool ProjectModel::getIsSearching(void) const
+{
+    return this->isSearching;
+}
+
+void ProjectModel::searchInProject(const QString& searchText, bool wholeWord, bool caseSensitive)
+{
+    const int generation = ++this->searchGeneration;
+
+    if (true == searchText.isEmpty())
+    {
+        // A running search is ignored then
+        if (true == this->isSearching)
+        {
+            this->isSearching = false;
+            Q_EMIT isSearchingChanged();
+        }
+        Q_EMIT searchFinished(searchText, QVariantList(), 0, false);
+        return;
+    }
+
+    // The content of the open lua scripts is copied here in the gui thread, the worker thread only gets the copies
+    QList<QPair<QString, QString>> openLuaScripts;
+    LuaEditorModel* luaEditorModel = LuaEditorModel::instance();
+    for (int i = 0; i < luaEditorModel->count(); ++i)
+    {
+        LuaEditorModelItem* item = luaEditorModel->getEditorModelItem(i);
+        if (Q_NULLPTR != item)
+        {
+            openLuaScripts.append(qMakePair(item->getFilePathName(), item->getContent()));
+        }
+    }
+
+    if (false == this->isSearching)
+    {
+        this->isSearching = true;
+        Q_EMIT isSearchingChanged();
+    }
+
+    QFutureWatcher<SearchResult>* watcher = new QFutureWatcher<SearchResult>(this);
+    connect(watcher, &QFutureWatcher<SearchResult>::finished, this, [this, watcher, generation, searchText]()
+    {
+        watcher->deleteLater();
+
+        // A newer search has been started in the meantime
+        if (generation != this->searchGeneration)
+        {
+            return;
+        }
+
+        this->isSearching = false;
+        Q_EMIT isSearchingChanged();
+
+        const SearchResult searchResult = watcher->result();
+        Q_EMIT searchFinished(searchText, searchResult.results, searchResult.searchedFileCount, searchResult.truncated);
+    });
+
+    watcher->setFuture(QtConcurrent::run(searchInFiles, this->rootFolder, openLuaScripts, searchText, wholeWord, caseSensitive));
 }
 
 int ProjectModel::getLuaFileCount(void) const

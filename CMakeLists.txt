@@ -75,6 +75,7 @@ qt_add_resources(NOWALuaScript "qml"
         qml_files/MainMenu.qml
         qml_files/SearchDialog.qml
         qml_files/ProjectView.qml
+        qml_files/ProjectSearchView.qml
         qml_files/AboutDialog.qml
         qml_files/IntelliSenseContextMenu.qml
         qml_files/MatchedFunctionContextMenu.qml
