@@ -29,7 +29,7 @@ Rectangle
         Rectangle
         {
             Layout.fillWidth: true;
-            Layout.preferredHeight: 32;
+            Layout.preferredHeight: 48;
             color: "#2F4F4F";
 
             RowLayout

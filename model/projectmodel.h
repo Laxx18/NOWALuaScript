@@ -119,6 +119,16 @@ private:
     void loadRecentProjects(void);
 
     void saveRecentProjects(void);
+
+    /**
+     * @brief Writes the folder and the open lua scripts to the project file. Without touching the recent projects, so it can also be used for the auto save.
+     */
+    bool writeProjectFile(const QString& filePathName);
+
+    /**
+     * @brief If the project has been saved as project file, it is saved again a moment after a lua script has been opened or closed or the tab has changed.
+     */
+    void scheduleAutoSave(void);
 private:
     static ProjectModel* ms_pInstance;
     static QMutex ms_mutex;
@@ -130,6 +140,7 @@ private:
 
     QFileSystemWatcher folderWatcher;
     QTimer refreshTimer;
+    QTimer autoSaveTimer;
 };
 
 #endif // PROJECTMODEL_H

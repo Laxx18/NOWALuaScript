@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QUrl>
+#include <QCoreApplication>
 #include <QDebug>
 
 ProjectModel* ProjectModel::ms_pInstance = Q_NULLPTR;
@@ -15,10 +16,10 @@ QMutex ProjectModel::ms_mutex;
 
 namespace
 {
-    const int maxRecentProjects = 5;
-    // Protection against e.g. opening "C:/" by accident
-    const int maxFolderDepth = 12;
-    const int maxWatchedFolders = 1000;
+const int maxRecentProjects = 5;
+// Protection against e.g. opening "C:/" by accident
+const int maxFolderDepth = 12;
+const int maxWatchedFolders = 1000;
 }
 
 ProjectModel::ProjectModel(QObject* parent)
@@ -32,9 +33,50 @@ ProjectModel::ProjectModel(QObject* parent)
     this->refreshTimer.setInterval(500);
     connect(&this->refreshTimer, &QTimer::timeout, this, &ProjectModel::refresh);
     connect(&this->folderWatcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString&)
+            {
+                this->refreshTimer.start();
+            });
+
+    // Attention: Formerly the open lua scripts were only written, when "Save Project" was clicked. Saving the project right after opening the folder
+    // therefore stored an empty list and the lua scripts opened afterwards were lost. Now the project file follows the open lua scripts automatically.
+    this->autoSaveTimer.setSingleShot(true);
+    this->autoSaveTimer.setInterval(500);
+    connect(&this->autoSaveTimer, &QTimer::timeout, this, [this]()
+            {
+                if (false == this->projectFilePathName.isEmpty())
+                {
+                    this->writeProjectFile(this->projectFilePathName);
+                }
+            });
+
+    LuaEditorModel* luaEditorModel = LuaEditorModel::instance();
+    connect(luaEditorModel, &QAbstractItemModel::rowsInserted, this, &ProjectModel::scheduleAutoSave);
+    connect(luaEditorModel, &QAbstractItemModel::rowsRemoved, this, &ProjectModel::scheduleAutoSave);
+    connect(luaEditorModel, &LuaEditorModel::currentIndexChanged, this, &ProjectModel::scheduleAutoSave);
+
+    // A pending auto save is done before the application quits
+    if (Q_NULLPTR != QCoreApplication::instance())
     {
-        this->refreshTimer.start();
-    });
+        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, [this]()
+                {
+                    if (true == this->autoSaveTimer.isActive())
+                    {
+                        this->autoSaveTimer.stop();
+                        if (false == this->projectFilePathName.isEmpty())
+                        {
+                            this->writeProjectFile(this->projectFilePathName);
+                        }
+                    }
+                });
+    }
+}
+
+void ProjectModel::scheduleAutoSave(void)
+{
+    if (false == this->projectFilePathName.isEmpty())
+    {
+        this->autoSaveTimer.start();
+    }
 }
 
 ProjectModel* ProjectModel::instance()
@@ -185,7 +227,20 @@ bool ProjectModel::saveProject(const QString& projectFilePathName)
         localProjectFilePathName += ".nowaluaproj";
     }
 
-    const QDir projectDir = QFileInfo(localProjectFilePathName).absoluteDir();
+    if (false == this->writeProjectFile(localProjectFilePathName))
+    {
+        return false;
+    }
+
+    this->projectFilePathName = QFileInfo(localProjectFilePathName).absoluteFilePath();
+    this->addRecentProject(this->projectFilePathName);
+    Q_EMIT projectChanged();
+    return true;
+}
+
+bool ProjectModel::writeProjectFile(const QString& filePathName)
+{
+    const QDir projectDir = QFileInfo(filePathName).absoluteDir();
 
     QJsonObject projectObject;
     projectObject["type"] = "NOWALuaScriptProject";
@@ -210,18 +265,14 @@ bool ProjectModel::saveProject(const QString& projectFilePathName)
         projectObject["currentFile"] = projectDir.relativeFilePath(currentItem->getFilePathName());
     }
 
-    QFile file(localProjectFilePathName);
+    QFile file(filePathName);
     if (false == file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
-        Q_EMIT projectError("Unable to save project file: " + localProjectFilePathName);
+        Q_EMIT projectError("Unable to save project file: " + filePathName);
         return false;
     }
     file.write(QJsonDocument(projectObject).toJson(QJsonDocument::Indented));
     file.close();
-
-    this->projectFilePathName = QFileInfo(localProjectFilePathName).absoluteFilePath();
-    this->addRecentProject(this->projectFilePathName);
-    Q_EMIT projectChanged();
     return true;
 }
 
@@ -232,6 +283,16 @@ void ProjectModel::closeProject(void)
         this->folderWatcher.removePaths(this->folderWatcher.directories());
     }
     this->refreshTimer.stop();
+
+    // E.g. a lua script has just been closed: The pending auto save is done, before the project is gone
+    if (true == this->autoSaveTimer.isActive())
+    {
+        this->autoSaveTimer.stop();
+        if (false == this->projectFilePathName.isEmpty())
+        {
+            this->writeProjectFile(this->projectFilePathName);
+        }
+    }
 
     this->rootFolder.clear();
     this->projectFilePathName.clear();

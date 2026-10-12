@@ -14,6 +14,13 @@
 
 #include <QQuickWindow>
 #include <QDebug>
+#include <QSettings>
+#include <QDir>
+#include <QFileInfo>
+
+#ifdef Q_OS_WIN
+#include <shlobj.h>
+#endif
 
 void activateWindow(const QQmlApplicationEngine& engine)
 {
@@ -42,6 +49,32 @@ void activateWindow(const QQmlApplicationEngine& engine)
         qmlWindow->showMaximized();
     }
 }
+
+#ifdef Q_OS_WIN
+// Registers *.nowaluaproj for the current user (no admin rights needed), so that a double click on a project file opens it in NOWALuaScript.
+// Only written, if the entry is missing or points to another exe (e.g. NOWALuaScript has been moved).
+void registerProjectFileType(void)
+{
+    const QString progId = "NOWALuaScript.Project";
+    const QString exeFilePathName = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    const QString openCommand = "\"" + exeFilePathName + "\" \"%1\"";
+
+    QSettings classes("HKEY_CURRENT_USER\\Software\\Classes", QSettings::NativeFormat);
+    if (classes.value(".nowaluaproj/Default").toString() == progId && classes.value(progId + "/shell/open/command/Default").toString() == openCommand)
+    {
+        return;
+    }
+
+    classes.setValue(".nowaluaproj/Default", progId);
+    classes.setValue(progId + "/Default", "NOWALuaScript Project");
+    classes.setValue(progId + "/DefaultIcon/Default", "\"" + exeFilePathName + "\",0");
+    classes.setValue(progId + "/shell/open/command/Default", openCommand);
+    classes.sync();
+
+    // Lets the explorer know, that a file association has changed (e.g. for the icon)
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+}
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -73,11 +106,17 @@ int main(int argc, char *argv[])
     // Register LuaEditorQml as a QML type
     qmlRegisterType<LuaEditorQml>("NOWALuaScript", 1, 0, "LuaEditorQml");
 
+#ifdef Q_OS_WIN
+    registerProjectFileType();
+#endif
+
     QString initialLuaScriptPath;
-    // Handle initial Lua script path from command-line arguments
-    if (argc > 1)
+    // Handle initial Lua script path from command-line arguments. May also be a project file (*.nowaluaproj), e.g. by a double click on it.
+    // Note: QCoreApplication::arguments is used instead of argv, so that paths with umlauts work.
+    const QStringList arguments = QCoreApplication::arguments();
+    if (arguments.size() > 1)
     {
-        initialLuaScriptPath = argv[1]; // First argument is the Lua script file path
+        initialLuaScriptPath = arguments.at(1); // First argument is the Lua script file path
         qDebug() << "Opening Lua script at:" << initialLuaScriptPath;
         // Handle the initial Lua script (open in editor)
     }
@@ -88,7 +127,7 @@ int main(int argc, char *argv[])
     const QUrl url(QStringLiteral("qrc:/qml_files/Main.qml"));
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, []() { QCoreApplication::exit(-1); },
-    Qt::QueuedConnection);
+                     Qt::QueuedConnection);
     engine.load(url);
 
 #ifdef QT_NO_DEBUG
@@ -106,12 +145,25 @@ int main(int argc, char *argv[])
 
     QSharedPointer<AppCommunicator> ptrAppCommunicator(new AppCommunicator(ptrLuaScriptController));
 
+    // A project file opens the project, everything else is opened as lua script
+    auto openFile = [=](const QString& filePath)
+    {
+        if (true == filePath.endsWith(".nowaluaproj", Qt::CaseInsensitive))
+        {
+            ProjectModel::instance()->openProject(filePath);
+        }
+        else
+        {
+            ptrLuaScriptController.get()->slot_createLuaScript(filePath);
+        }
+    };
+
     QObject::connect(ptrAppCommunicator.get(), &AppCommunicator::fileReceived,
                      [=, &engine](const QString& filePath)
                      {
-                        ptrLuaScriptController.get()->slot_createLuaScript(filePath);
+                         openFile(filePath);
 
-                        activateWindow(engine);
+                         activateWindow(engine);
 
                      });
 
@@ -121,7 +173,7 @@ int main(int argc, char *argv[])
     // Connect the QCoreApplication's aboutToQuit signal to delete the file when the app closes
     QObject::connect(&app, &QCoreApplication::aboutToQuit, [&]()
                      {
-                        ptrAppCommunicator->deleteRunningFile();
+                         ptrAppCommunicator->deleteRunningFile();
                      });
 
 
@@ -129,7 +181,7 @@ int main(int argc, char *argv[])
     // After QML is ready, set a potential first lua script and load it, if it comes from the args
     if (false == initialLuaScriptPath.isEmpty())
     {
-        ptrLuaScriptController->slot_createLuaScript(initialLuaScriptPath);
+        openFile(initialLuaScriptPath);
     }
 
     return app.exec();
