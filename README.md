@@ -34,6 +34,7 @@ This document outlines the key features, installation, usage, and communication 
 - **Function highlight** and description on the fly to see which parameters are required at runtime.
 - Highlight selected words via Control-Key + Mouse click and remove the highlight again via Control-Key and Mouse click.
 - Search/Replace
+- Project Structure Tree and Project Files
 
 ## Installation
 To install and run NOWALuaScript:
