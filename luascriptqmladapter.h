@@ -41,7 +41,8 @@ Q_SIGNALS:
     void signal_requestSetLuaApi(const QString& filePathName, bool parseSilent);
     void signal_luaApiPreparationResult(bool parseSilent, bool success, const QString& message);
     void signal_relayKeyPress(int key);
-    void signal_resultSearchMatchCount(int matchCount);
+    void signal_resultSearch(int currentMatch, int matchCount);
+    void signal_resultReplaceAll(int replacedCount);
 public Q_SLOTS:
     void syntaxCheckResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
 
@@ -49,7 +50,9 @@ public Q_SLOTS:
 
     void luaApiPreparationResult(bool parseSilent, bool success, const QString& message);
 
-    void resultSearchMatchCount(int matchCount);
+    void resultSearch(int currentMatch, int matchCount);
+
+    void resultReplaceAll(int replacedCount);
 private:
     static LuaScriptQmlAdapter* ms_pInstance;
     static QMutex ms_mutex;

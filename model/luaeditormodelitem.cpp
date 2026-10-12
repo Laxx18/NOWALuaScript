@@ -13,7 +13,8 @@ LuaEditorModelItem::LuaEditorModelItem(QObject* parent)
     hasChanges(false),
     firstTimeContent(true),
     matchClassWorker(Q_NULLPTR),
-    matchClassThread(Q_NULLPTR),
+    variablesDirty(true),
+    lastVariableDetectionDuration(0),
     printToConsole(false)
 {
 
@@ -21,7 +22,11 @@ LuaEditorModelItem::LuaEditorModelItem(QObject* parent)
 
 LuaEditorModelItem::~LuaEditorModelItem()
 {
-
+    if (Q_NULLPTR != this->matchClassWorker)
+    {
+        delete this->matchClassWorker;
+        this->matchClassWorker = Q_NULLPTR;
+    }
 }
 
 void LuaEditorModelItem::setFilePathName(const QString& filePathName)
@@ -48,6 +53,7 @@ void LuaEditorModelItem::setContent(const QString& content)
         return;
     }
     this->content = content;
+    this->variablesDirty = true;
 
     if (false == this->firstTimeContent)
     {
@@ -127,6 +133,27 @@ void LuaEditorModelItem::restoreContent()
     this->setTitle(tempTitle);
 }
 
+bool LuaEditorModelItem::isSavedContent(const QString& content) const
+{
+    // Tabs are replaced by spaces when loading, so they do not count as difference
+    QString savedContent = this->oldContent;
+    QString otherContent = content;
+    savedContent.replace("\t", "    ");
+    otherContent.replace("\t", "    ");
+    return savedContent == otherContent;
+}
+
+void LuaEditorModelItem::setReloadedContent(const QString& content)
+{
+    this->content = content;
+    this->oldContent = content;
+    this->firstTimeContent = false;
+    this->variablesDirty = true;
+    this->setHasChanges(false);
+
+    Q_EMIT contentChanged();
+}
+
 void LuaEditorModelItem::openProjectFolder()
 {
     // Extract the folder path from the full file path
@@ -142,8 +169,26 @@ QString LuaEditorModelItem::getFilePathName() const
     return this->filePathName;
 }
 
+void LuaEditorModelItem::detectVariablesIfNeeded(bool cursorJumped)
+{
+    if (false == this->variablesDirty && true == this->hasVariablesDetected())
+    {
+        return;
+    }
+
+    // While typing at most once a second. For big lua scripts, where the detection takes long, the interval grows, so that typing stays fluent.
+    const qint64 interval = qMax<qint64>(1000, this->lastVariableDetectionDuration * 10);
+    if (true == cursorJumped || false == this->hasVariablesDetected() || false == this->variableDetectionTimer.isValid() || this->variableDetectionTimer.elapsed() >= interval)
+    {
+        this->detectVariables();
+    }
+}
+
 void LuaEditorModelItem::detectVariables(void)
 {
+    this->variablesDirty = false;
+    this->variableDetectionTimer.start();
+
     this->variableMap.clear();
     QStringList lines = this->content.split('\n');
 
@@ -220,6 +265,24 @@ void LuaEditorModelItem::detectVariables(void)
     } while(true == needThirdRound);
 
     // Additional passes for other types of assignments or specific handling if needed
+
+    this->lastVariableDetectionDuration = this->variableDetectionTimer.elapsed();
+    this->variableDetectionTimer.start();
+}
+
+QString LuaEditorModelItem::getClassNameFromVariableName(const QString& variableName)
+{
+    if (true == variableName.isEmpty() || false == variableName.at(0).isLower())
+    {
+        return QString();
+    }
+
+    QString className = variableName.at(0).toUpper() + variableName.mid(1);
+    if (true == ApiModel::instance()->isValidClassName(className))
+    {
+        return className;
+    }
+    return QString();
 }
 
 bool LuaEditorModelItem::hasUnmatchedOpeningBracket(const QString& text)
@@ -245,7 +308,7 @@ bool LuaEditorModelItem::hasUnmatchedOpeningBracket(const QString& text)
 void LuaEditorModelItem::detectLocalVariables(const QString& line, int lineNumber)
 {
     // Detect local variables
-    QRegularExpression localVarRegex(R"(local\s+(\w+)\s*=)");
+    static const QRegularExpression localVarRegex(R"(local\s+(\w+)\s*=)");
     QRegularExpressionMatch match = localVarRegex.match(line);
 
     if (match.hasMatch())
@@ -258,7 +321,7 @@ void LuaEditorModelItem::detectLocalVariables(const QString& line, int lineNumbe
 void LuaEditorModelItem::detectGlobalVariables(const QString& line, int lineNumber)
 {
     // Detect global assignments
-    QRegularExpression globalVarRegex(R"((\w+)\s*=)");
+    static const QRegularExpression globalVarRegex(R"((\w+)\s*=)");
     QRegularExpressionMatch match = globalVarRegex.match(line);
 
     if (match.hasMatch() && !line.startsWith("local"))
@@ -271,7 +334,7 @@ void LuaEditorModelItem::detectGlobalVariables(const QString& line, int lineNumb
 void LuaEditorModelItem::detectSingletons(const QString& line, int lineNumber)
 {
     // Regular expression to detect singleton usage
-    QRegularExpression singletonRegex(
+    static const QRegularExpression singletonRegex(
         R"(\b(\w+)\b(?=\s*(?:;|$|:)))");
     QRegularExpressionMatch match = singletonRegex.match(line);
 
@@ -298,7 +361,7 @@ void LuaEditorModelItem::detectFunctions(const QString& line, int lineNumber)
     // - local function foo()
     // - function foo()
     // - function ClassName:MethodName()
-    QRegularExpression functionRegex(R"(function\s+([\w:]+)\s*\()");
+    static const QRegularExpression functionRegex(R"(function\s+([\w:]+)\s*\()");
     QRegularExpressionMatch match = functionRegex.match(line);
 
     if (match.hasMatch())
@@ -368,7 +431,7 @@ void LuaEditorModelItem::handleCastAssignment(const QString& statement, int line
 void LuaEditorModelItem::handleMethodCallAssignment(const QString& statement, int lineNumber)
 {
     // Handle method call assignments and infer variable types
-    QRegularExpression assignmentRegex(R"((\w+)\s*=\s*(\w+):(\w+)\(\))");
+    static const QRegularExpression assignmentRegex(R"((\w+)\s*=\s*(\w+):(\w+)\(\))");
     QRegularExpressionMatch match = assignmentRegex.match(statement);
 
     if (match.hasMatch())
@@ -429,7 +492,7 @@ void LuaEditorModelItem::handleMethodCallAssignment(const QString& statement, in
 void LuaEditorModelItem::handleSimpleAssignment(const QString& statement, int lineNumber)
 {
     // Handle simple assignments (no colons) (e.g., temp2 = temp), so temp2 should exactly be of type temp
-    QRegularExpression simpleAssignmentRegex(R"((\w+)\s*=\s*(\w+)\s*;?)");
+    static const QRegularExpression simpleAssignmentRegex(R"((\w+)\s*=\s*(\w+)\s*;?)");
     QRegularExpressionMatch simpleMatch = simpleAssignmentRegex.match(statement);
 
     if (simpleMatch.hasMatch())
@@ -454,7 +517,7 @@ void LuaEditorModelItem::handleSimpleAssignment(const QString& statement, int li
 bool LuaEditorModelItem::isCommentOnlyLine(const QString& line)
 {
     // Regular expression to match lines starting with optional spaces followed by "--"
-    QRegularExpression commentOnlyRegex(R"(^\s*--)");
+    static const QRegularExpression commentOnlyRegex(R"(^\s*--)");
     return commentOnlyRegex.match(line).hasMatch();
 }
 
@@ -464,7 +527,7 @@ void LuaEditorModelItem::handleMethodChainAssignment(const QString& statement, i
     // Handle method chain assignment (e.g., variable = object:method1():method2())
     // Or even:
     // Handle method chain assignment (e.g., variable = object:method1():method2().x)
-    QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+(?:\.\w+)?))");
+    static const QRegularExpression assignmentChainRegex(R"((\w+)\s*=\s*(\w+(:\w+\(\))+(?:\.\w+)?))");
     QRegularExpressionMatch match = assignmentChainRegex.match(statement);
     if (match.hasMatch())
     {
@@ -553,7 +616,7 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
     // QRegularExpression assignmentOrMethodChainRegex(
       //   R"((?:(\w+)\s*=\s*)?(\w+(:\w+\(\))+(?:\.\w+)?))");
 
-    QRegularExpression assignmentOrMethodChainRegex(
+    static const QRegularExpression assignmentOrMethodChainRegex(
         R"((?:(\w+)\s*=\s*)?(\w+(:\w+\((?:[^()]*|'[^']*'|"[^"]*")\))+(?:\.\w+)?))");
 
     QRegularExpressionMatch match = assignmentOrMethodChainRegex.match(statement);
@@ -575,6 +638,16 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
             QString currentType = variableMap.contains(baseClassOrVar)
                                       ? variableMap[baseClassOrVar].type
                                       : baseClassOrVar;  // Start with base class if it's a known type
+
+            // Variables without detectable type, e.g. the function parameter in 'connect = function(gameObject)': Try the class name by the variable name
+            if (false == ApiModel::instance()->isValidClassName(currentType))
+            {
+                QString classNameFromVariableName = getClassNameFromVariableName(baseClassOrVar);
+                if (false == classNameFromVariableName.isEmpty())
+                {
+                    currentType = classNameFromVariableName;
+                }
+            }
 
             if (false == baseClassOrVar.isEmpty() && false == currentType.isEmpty())
             {
@@ -600,7 +673,10 @@ void LuaEditorModelItem::handleMethodChain(const QString& statement, int lineNum
 
                 // Find the position of the method call
                 int methodPosition = statement.indexOf(methodCall, position);  // Get position based on current `position`
-                qDebug() << methodCall << "position =" << methodPosition;
+                if (true == this->printToConsole)
+                {
+                    qDebug() << methodCall << "position =" << methodPosition;
+                }
 
                 // Update position for the next method call
                 position = methodPosition /*+ methodCall.length()*/;  // Update position after the current method
@@ -744,7 +820,7 @@ bool LuaEditorModelItem::isLuaNativeType(const QString& typeName)
 void LuaEditorModelItem::handleTableTypes(const QString& variableName, const QString& statement, int lineNumber)
 {
     // Regex to match all types inside square brackets (e.g., [number], [42], [GameObject])
-    QRegularExpression dimensionRegex(R"(\[([^\]]+)\])");
+    static const QRegularExpression dimensionRegex(R"(\[([^\]]+)\])");
     QRegularExpressionMatchIterator dimensionMatches = dimensionRegex.globalMatch(statement);
 
     QStringList extractedTypes;
@@ -775,7 +851,7 @@ void LuaEditorModelItem::handleTableAccess(const QString& statement, int lineNum
 {
     // Handle complex type index access (e.g., positionAndNormal[0])
     // QRegularExpression tableAccessRegex(R"(local\s+(\w+)\s*=\s*(\w+)\[(\d+)\])");
-    QRegularExpression tableAccessRegex(R"(local\s+(\w+)\s*=\s*(\w+)\[([^\]]+)\])");
+    static const QRegularExpression tableAccessRegex(R"(local\s+(\w+)\s*=\s*(\w+)\[([^\]]+)\])");
     QRegularExpressionMatch tableAccessMatch = tableAccessRegex.match(statement);
 
     if (tableAccessMatch.hasMatch())
@@ -793,7 +869,7 @@ void LuaEditorModelItem::handleTableAccess(const QString& statement, int lineNum
                 // Extract subtypes for the table in a generic way
                 QString valueType = sourceInfo.type;
                 QStringList subTypes;
-                QRegularExpression subTypeRegex(R"(\[(\w+)\])");
+                static const QRegularExpression subTypeRegex(R"(\[(\w+)\])");
                 QRegularExpressionMatchIterator it = subTypeRegex.globalMatch(valueType);
 
                 while (it.hasNext())
@@ -814,7 +890,7 @@ void LuaEditorModelItem::handleTableAccess(const QString& statement, int lineNum
 void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, const QStringList& lines)
 {
     // Handle for-loop variables (e.g., for i = 0, #nodes do ...)
-    QRegularExpression loopVarRegex(R"(for\s+(\w+)\s*=\s*0\s*,\s*#(\w+))");
+    static const QRegularExpression loopVarRegex(R"(for\s+(\w+)\s*=\s*0\s*,\s*#(\w+))");
     QRegularExpressionMatch match = loopVarRegex.match(statement);
 
     if (match.hasMatch())
@@ -869,7 +945,7 @@ void LuaEditorModelItem::handleLoop(const QString& statement, int lineNumber, co
     {
         // Checks if its a while loop
         // Handle `while` loop variables (e.g., while i <= #nodes do ...)
-        QRegularExpression whileLoopRegex(R"(while\s+(\w+)\s*<=\s*#(\w+))");
+        static const QRegularExpression whileLoopRegex(R"(while\s+(\w+)\s*<=\s*#(\w+))");
         QRegularExpressionMatch whileMatch = whileLoopRegex.match(statement);
 
         if (whileMatch.hasMatch())
@@ -1018,42 +1094,19 @@ QMap<QString, LuaEditorModelItem::LuaVariableInfo> LuaEditorModelItem::getVariab
 
 void LuaEditorModelItem::startIntellisenseProcessing(bool forConstant, bool forFunctionParameters, const QString& currentText, const QString& textAfterKeyword, int cursorPos, int mouseX, int mouseY)
 {
-    // If there's already a worker, interrupt its process
-    if (Q_NULLPTR != this->matchClassWorker)
+    // Attention: Formerly the first request started a thread, and all further requests ran directly on the gui thread, while the thread could still be busy
+    // with the same worker. Both changed the variables and the api model at the same time. Now everything runs on the gui thread, one request after the other.
+    // The expensive part, the detection of all variables, is only done when needed (see detectVariablesIfNeeded).
+    if (Q_NULLPTR == this->matchClassWorker)
     {
-        // Stop the ongoing process
-        this->matchClassWorker->stopProcessing();
-
-        this->matchClassWorker->setParameters(forConstant, forFunctionParameters, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
-
-        // Emit a request to process in the worker thread
-        Q_EMIT this->matchClassWorker->signal_requestProcess();
+        this->matchClassWorker = new MatchClassWorker(this, forConstant, forFunctionParameters, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
     }
     else
     {
-        // Create a new worker instance
-        this->matchClassWorker = new MatchClassWorker(this, forConstant, forFunctionParameters, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
-
-        // Create and start a new thread for processing
-        this->matchClassThread = QThread::create([this]
-             {
-                // Connect the signal to the process method
-                QObject::connect(this->matchClassWorker, &MatchClassWorker::signal_requestProcess, this->matchClassWorker, &MatchClassWorker::process);
-                this->matchClassWorker->process();
-             });
-
-        QObject::connect(matchClassWorker, &MatchClassWorker::finished, this, [this]() {
-            // Cleanup and reset when finished
-            delete this->matchClassWorker; // Delete the worker instance when done
-            this->matchClassWorker = Q_NULLPTR; // Reset the worker pointer
-            this->matchClassThread->quit();  // Quit the thread
-        });
-
-        QObject::connect(this->matchClassThread, &QThread::finished, this->matchClassThread, &QThread::deleteLater);
-
-        // Start processing
-        this->matchClassThread->start();
+        this->matchClassWorker->setParameters(forConstant, forFunctionParameters, currentText, textAfterKeyword, cursorPos, mouseX, mouseY);
     }
+
+    this->matchClassWorker->process();
 }
 
 void LuaEditorModelItem::closeIntellisense()

@@ -35,6 +35,11 @@ public:
     void checkRuntimeError(const QString& errorMessage, int line, int start, int end);
 
     bool saveLuaScript(const QString& content);
+
+    /**
+     * @brief Reads the lua script file the same way as when loading it (tabs are replaced by 4 spaces). Used to detect changes outside of the editor.
+     */
+    static bool readScriptFile(const QString& filePathName, QString& content);
 Q_SIGNALS:
     void signal_luaScriptLoaded(const QString& content);
     void signal_syntaxCheckResult(bool valid, int line, int start, int end, const QString& message);

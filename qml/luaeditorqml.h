@@ -36,6 +36,19 @@ public:
      Q_INVOKABLE void highlightWordUnderCursor(const QString& word);
 
      Q_INVOKABLE void clearHighlightWordUnderCursor(void);
+
+     /**
+      * @brief Indents the selected lines, or inserts 4 spaces at the cursor, if no lines are selected. Is called directly by the key handler of this editor,
+      *        so that it does not depend on the current index of the model.
+      */
+     Q_INVOKABLE void indentSelection(void);
+
+     Q_INVOKABLE void unindentSelection(void);
+
+     /**
+      * @brief Gets the text, which the search shall start with: the selected text, if it is within one line, else the word under the cursor.
+      */
+     Q_INVOKABLE QString getSearchTextProposal(void);
 public:
     // IMPORANT: parent MUST be by default Q_NULLPTR! Else: If creating for QML: Element is not createable will occur!!!
     // See: https://forum.qt.io/topic/155986/qt6-qabstractlistmodel-constructor-with-two-arguments-qml-element-is-not-creatable/2
@@ -72,9 +85,6 @@ Q_SIGNALS:
 
     void signal_insertingNewLine(bool inserting);
 
-    void signal_resultSearchMatchCount(int matchCount);
-
-    void signal_resultSearchContinuePosition(const QRectF& cursorRectangle);
 private:
     void showIntelliSenseContextMenuAtCursor(bool forConstant, bool forFunctionParameters, const QString& text, int cursorPosition, const QString& textAfterColon);
 

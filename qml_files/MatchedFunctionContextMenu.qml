@@ -13,6 +13,10 @@ Popup
     width: methodDetails.width + 20;
     height: Math.max(100, dataColumn.height + 20);
 
+    // Attention: The popup closes itself on a click outside or on Escape, without calling close() below. The flag stayed true then,
+    // and Tab, search, undo etc. did nothing anymore. So the flag always follows the real visibility.
+    onVisibleChanged: NOWAApiModel.isMatchedFunctionShown = root.visible;
+
     QtObject
     {
         id: p;

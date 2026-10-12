@@ -46,8 +46,8 @@ void MatchClassWorker::process(void)
     this->isProcessing = true;
     this->isStopped = false; // Reset the stop flag
 
-    // Set the content for processing
-    this->luaEditorModelItem->setContent(this->currentText);
+    // Attention: The content must not be set here. The editor sets it on each text change. Formerly this ran in an own thread with an older text
+    // and could overwrite newer changes, which then were not saved.
 
     QString oldMatchedClassName = this->matchedClassName;
 
@@ -213,10 +213,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
         this->typedInsideFunction.clear();
     }
 
-    if (std::abs(this->cursorPosition - this->oldCursorPosition) > 1 || !this->luaEditorModelItem->hasVariablesDetected())
-    {
-        this->luaEditorModelItem->detectVariables();
-    }
+    this->luaEditorModelItem->detectVariablesIfNeeded(std::abs(this->cursorPosition - this->oldCursorPosition) > 1);
 
     QString textUpToCursor;
     int lastNewlinePos = -1;
@@ -257,7 +254,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     }
 
     // If there is any of this operators involved in the line, easy case: The text after the operation is just interesing, the rest is dismissed
-    QRegularExpression regex(R"(.*[\+\-\=\!\>\<\~\/]=?\s*(.*)$)");
+    static const QRegularExpression regex(R"(.*[\+\-\=\!\>\<\~\/]=?\s*(.*)$)");
     QRegularExpressionMatch matchOperators = regex.match(currentLine);
 
     if (matchOperators.hasMatch())
@@ -286,6 +283,12 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
             return "";
         }
         lineCursorPos = currentLine.size();
+    }
+
+    // Attention: lineCursorPos can be 0, e.g. at the start of a line
+    if (lineCursorPos <= 0 || lineCursorPos > currentLine.size())
+    {
+        return currentLine;
     }
 
     QChar currentCharAtCursor = currentLine[lineCursorPos - 1];
@@ -419,7 +422,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     {
         unmatchedOpenBracketPos = bracketStack.top();
     }
-    if (true == localSegment.isEmpty() && unmatchedOpenBracketPos != -1 && currentCharAtCursor != ",")
+    if (true == localSegment.isEmpty() && unmatchedOpenBracketPos != -1 && currentCharAtCursor != QChar(','))
     {
         // int segmentCursorPos = lineCursorPos + 1 - unmatchedOpenBracketPos;
         // localSegment = currentLine.mid(unmatchedOpenBracketPos, segmentCursorPos);
@@ -474,7 +477,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     // E.g. "         local boss1Defeated = AppStateManager:getGameProgressModule():"
     // -> local boss1Defeated = shall not be used
     // QRegularExpression assignmentRegex(R"(\s*(local\s+)?[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*)");
-    QRegularExpression assignmentRegex(R"(\s*=\s*)");
+    static const QRegularExpression assignmentRegex(R"(\s*=\s*)");
     QRegularExpressionMatch match = assignmentRegex.match(textToSplit);
     if (match.hasMatch())
     {
@@ -494,7 +497,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     QStringList reservedKeywords = {"if", "while", "for", "switch", "else", "return"};
 
     // Regular expression to match reserved keywords at the start, optionally followed by "(" or " "
-    QRegularExpression keywordRegex(R"(^\s*(\b(?:if|while|for|switch|else|return)\b)(?=\s|\())");
+    static const QRegularExpression keywordRegex(R"(^\s*(\b(?:if|while|for|switch|else|return)\b)(?=\s|\())");
 
     // Remove reserved keywords at the start of the string
     QRegularExpressionMatch keywordMatch = keywordRegex.match(textToSplit);
@@ -517,7 +520,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     QStringList reservedKeywords = {"if", "while", "for", "switch", "else", "return"};
 
     // Regular expression to match reserved keywords at the start, optionally followed by "(" or " "
-    QRegularExpression keywordRegex(R"(^\s*(\b(?:if|while|for|switch|else|return)\b)(?=\s|\())");
+    static const QRegularExpression keywordRegex(R"(^\s*(\b(?:if|while|for|switch|else|return)\b)(?=\s|\())");
 
     // Remove reserved keywords at the start of the string
     QRegularExpressionMatch keywordMatch = keywordRegex.match(textToSplit);
@@ -544,7 +547,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
     qDebug() << "->tokens ---> " << tokens;
 
     QList<int> delimiterPositions;
-    QRegularExpression delimiterRegex(R"([:.])");
+    static const QRegularExpression delimiterRegex(R"([:.])");
     QRegularExpressionMatchIterator it = delimiterRegex.globalMatch(textToSplit);
 
     while (it.hasNext())
@@ -571,7 +574,24 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
 
         if (i == 0)
         {
-            if (variableMap.contains(token))
+            // Variables without detectable type, e.g. the function parameter in 'connect = function(gameObject)': Try the class name by the variable name
+            QString classNameFromVariableName;
+            if (false == variableMap.contains(token) || true == variableMap[token].type.isEmpty())
+            {
+                classNameFromVariableName = LuaEditorModelItem::getClassNameFromVariableName(token);
+            }
+
+            if (false == classNameFromVariableName.isEmpty())
+            {
+                rootClassName = classNameFromVariableName;
+                this->matchedClassName = rootClassName;
+
+                if (1 == tokens.size())
+                {
+                    return currentLine;
+                }
+            }
+            else if (variableMap.contains(token))
             {
                 const auto& luaVariableInfo = variableMap[token];
                 rootClassName = luaVariableInfo.type;
@@ -657,7 +677,7 @@ QString MatchClassWorker::handleCurrentLine(const QString& segment, bool& handle
         }
         else
         {
-            if (tokenPos > 0)
+            if (tokenPos > 0 && tokenPos < textToSplit.size())
             {
                 lastDelimiter = textToSplit[tokenPos];
             }
@@ -880,7 +900,7 @@ int MatchClassWorker::findPriorCommaPos(const QString& line, int cursorPos)
 bool MatchClassWorker::containsDelimiterWithQuoteBefore(const QString& currentLine)
 {
     // Find positions of ':' and '.'
-    QRegularExpression delimiterRegex(R"([:.])");
+    static const QRegularExpression delimiterRegex(R"([:.])");
     QRegularExpressionMatchIterator it = delimiterRegex.globalMatch(currentLine);
 
     while (it.hasNext())

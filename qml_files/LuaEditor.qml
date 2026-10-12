@@ -33,7 +33,45 @@ LuaEditorQml
 
     function checkSyntax()
     {
-        LuaScriptQmlAdapter.checkSyntax(root.model.filePathName, luaEditor.originalText);
+        LuaScriptQmlAdapter.checkSyntax(root.model.filePathName, luaEditor.text);
+    }
+
+    // Gives the keyboard focus back to the text, e.g. when the search bar is closed
+    function focusEditor()
+    {
+        luaEditor.forceActiveFocus();
+    }
+
+    // Jumps to the start of the given line (1 based) and gives the focus to the editor. Used by Ctrl+G.
+    function goToLine(lineNumber)
+    {
+        var text = luaEditor.text;
+        var position = 0;
+        for (var i = 1; i < lineNumber; ++i)
+        {
+            var newLinePosition = text.indexOf("\n", position);
+            if (newLinePosition < 0)
+            {
+                break;
+            }
+            position = newLinePosition + 1;
+        }
+
+        luaEditor.deselect();
+        luaEditor.cursorPosition = position;
+        luaEditor.forceActiveFocus();
+    }
+
+    function getLineCount()
+    {
+        // Attention: luaEditor.lineCount counts the wrapped lines too
+        return luaEditor.text.split("\n").length;
+    }
+
+    // Note: A named function, so that Qt.callLater calls it only once per event loop, also if several keys have been pressed
+    function syncCurrentText()
+    {
+        root.currentText = luaEditor.text;
     }
 
     function rebuildLineNumbers()
@@ -61,11 +99,6 @@ LuaEditorQml
         function onSignal_insertingNewLine(inserting)
         {
             root.isInsertingNewLine = inserting;
-        }
-
-        function onSignal_resultSearchContinuePosition(cursorRectangle)
-        {
-            flickable.ensureVisible(cursorRectangle);
         }
     }
 
@@ -193,15 +226,64 @@ LuaEditorQml
                         }
                     }
 
-                    onActiveFocusChanged:
+                    // Own blinking caret. Attention: The built in caret of the TextEdit sometimes stopped blinking and stayed invisible, after the text had been
+                    // changed from C++ (intellisense, tab, comment) or after selections. The TextEdit also controls the visibility of a cursor delegate itself,
+                    // hence the delegate is empty and the caret below is a normal child, which only depends on the focus. It is solid, while the cursor moves.
+                    cursorDelegate: Item
                     {
-                        if (activeFocus)
+                    }
+
+                    Rectangle
+                    {
+                        id: caret;
+
+                        property bool blinkOn: true;
+
+                        objectName: "caret";
+                        x: luaEditor.cursorRectangle.x;
+                        y: luaEditor.cursorRectangle.y;
+                        width: 2;
+                        height: luaEditor.cursorRectangle.height;
+                        color: luaEditor.color;
+                        visible: luaEditor.activeFocus && Qt.application.state === Qt.ApplicationActive && caret.blinkOn;
+
+                        Timer
                         {
-                            luaEditor.cursorVisible = false;
-                            luaEditor.cursorVisible = true;
+                            id: caretBlinkTimer;
+                            interval: 530;
+                            repeat: true;
+                            running: luaEditor.activeFocus;
+                            onTriggered: caret.blinkOn = !caret.blinkOn;
+                        }
+
+                        Connections
+                        {
+                            target: luaEditor;
+
+                            function onCursorPositionChanged()
+                            {
+                                caret.blinkOn = true;
+                                caretBlinkTimer.restart();
+                            }
+
+                            function onActiveFocusChanged()
+                            {
+                                caret.blinkOn = true;
+                                caretBlinkTimer.restart();
+                            }
                         }
                     }
 
+
+                    // Attention: Tab and Shift+Tab must reach this editor and not a shortcut of the window. The window shortcuts for Tab have been removed,
+                    // they also fired, when the focus was somewhere else, and depended on the current index of the model.
+                    Keys.onShortcutOverride: (event) =>
+                    {
+                        if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)
+                        {
+                            event.accepted = true;
+                        }
+                    }
 
                     Keys.onPressed: (event) =>
                     {
@@ -215,9 +297,14 @@ LuaEditorQml
                                 return;
                             }
                         }
-                        if (event.key === Qt.Key_Tab)
+                        if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier)))
                         {
-                            NOWALuaEditorModel.addTabToSelection();
+                            root.unindentSelection();
+                            event.accepted = true;
+                        }
+                        else if (event.key === Qt.Key_Tab)
+                        {
+                            root.indentSelection();
                             event.accepted = true;
                         }
                         else if (event.key === Qt.Key_Return)
@@ -241,8 +328,9 @@ LuaEditorQml
                             event.accepted = true;
                             NOWALuaEditorModel.redo();
                         }
-                        else
+                        else if (event.text.length === 1)
                         {
+                            // Only real characters, modifier keys like Shift have no text and would cause a type error
                             root.handleKeywordPressed(event.text);
                         }
                     }
@@ -264,9 +352,7 @@ LuaEditorQml
                         {
                             root.model.content = luaEditor.text;
 
-                            Qt.callLater(() => {
-                                root.currentText = luaEditor.text;
-                            });
+                            Qt.callLater(root.syncCurrentText);
                         }
                     }
 
@@ -292,10 +378,6 @@ LuaEditorQml
                             {
                                 root.clearHighlightWordUnderCursor();
                             }
-                        }
-                        if (luaEditor.selectedText.length > 0)
-                        {
-                            NOWALuaEditorModel.setSelectedSearchText(luaEditor.selectedText);
                         }
                     }
 
@@ -324,7 +406,11 @@ LuaEditorQml
                             {
                                 if (!valid)
                                 {
-                                    root.highlightRuntimeError(line, start, end);
+                                    // An error without line is only shown in the details area
+                                    if (line > 0)
+                                    {
+                                        root.highlightRuntimeError(line, start, end);
+                                    }
                                 }
                                 else
                                 {
@@ -344,6 +430,21 @@ LuaEditorQml
                             {
                                 luaEditor.text = content;
                                 detailsArea.filePathName = root.model.filePathName;
+                            }
+                        }
+
+                        // The file has been changed outside of the editor. Keeps the cursor and the scroll position as good as possible.
+                        function onSignal_luaScriptReloaded(filePathName, content)
+                        {
+                            if (filePathName === root.model.filePathName && luaEditor.text !== content)
+                            {
+                                let oldCursorPosition = luaEditor.cursorPosition;
+                                let oldContentY = flickable.contentY;
+
+                                luaEditor.text = content;
+
+                                luaEditor.cursorPosition = Math.min(oldCursorPosition, luaEditor.length);
+                                flickable.contentY = Math.max(0, Math.min(oldContentY, flickable.contentHeight - flickable.height));
                             }
                         }
                     }

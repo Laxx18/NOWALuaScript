@@ -3,6 +3,9 @@
 
 #include "model/luaeditormodelitem.h"
 #include "model/apimodel.h"
+#include "backend/luascript.h"
+
+#include <QFileInfo>
 
 #include <QDebug>
 
@@ -19,6 +22,13 @@ LuaScriptController::LuaScriptController(QQmlApplicationEngine* qmlEngine, QShar
     connect(luaEditorModel, &LuaEditorModel::signal_requestRemoveLuaScript, this, &LuaScriptController::slot_removeLuaScript);
     connect(luaEditorModel, &LuaEditorModel::signal_requestSaveLuaScript, this, &LuaScriptController::slot_saveLuaScript);
     connect(ptrLuaScriptAdapter.data(), &LuaScriptAdapter::signal_luaScriptSaved, this, &LuaScriptController::slot_luaScriptSaved);
+    connect(luaEditorModel, &LuaEditorModel::signal_requestReloadLuaScript, this, &LuaScriptController::slot_reloadLuaScript);
+
+    // Editors often write a file in several steps, so the changes are collected for a moment
+    this->changedFilesTimer.setSingleShot(true);
+    this->changedFilesTimer.setInterval(300);
+    connect(&this->changedFilesTimer, &QTimer::timeout, this, &LuaScriptController::processChangedFiles);
+    connect(&this->fileWatcher, &QFileSystemWatcher::fileChanged, this, &LuaScriptController::onWatchedFileChanged);
 
     connect(this->luaScriptQmlAdapter, &LuaScriptQmlAdapter::signal_requestSyntaxCheck, ptrLuaScriptAdapter.data(), &LuaScriptAdapter::checkSyntax);
 
@@ -91,6 +101,11 @@ void LuaScriptController::slot_createLuaScript(const QString& filePathName)
 
     this->luaEditorModel->addLuaScript(luaEditorModelItem);
 
+    if (false == this->fileWatcher.files().contains(tempFilePathName))
+    {
+        this->fileWatcher.addPath(tempFilePathName);
+    }
+
     // Sets the new script as active one
     this->luaScriptQmlAdapter->changeTab(this->luaEditorModel->getSize() - 1);
 }
@@ -109,6 +124,12 @@ void LuaScriptController::slot_removeLuaScript(int index)
     }
 #endif
 
+    if (index < 0 || index >= this->luaEditorQmls.size())
+    {
+        qDebug() << "Error on removing lua script, invalid index: " << index;
+        return;
+    }
+
     luaEditorQml = this->luaEditorQmls.at(index);
 
     if (Q_NULLPTR == luaEditorQml)
@@ -126,6 +147,13 @@ void LuaScriptController::slot_removeLuaScript(int index)
         return;
     }
 
+    this->fileWatcher.removePath(luaEditorModelItem->getFilePathName());
+    this->changedFiles.remove(luaEditorModelItem->getFilePathName());
+
+    // Attention: Remove it from the stack layout at once and not only with deleteLater, else the stack layout still has the old editor for a moment
+    // and its indices do not fit to the tabs anymore.
+    luaEditorQml->setParentItem(Q_NULLPTR);
+    luaEditorQml->setVisible(false);
     luaEditorQml->deleteLater();
 
     this->luaEditorQmls.removeOne(luaEditorQml);
@@ -143,17 +171,85 @@ void LuaScriptController::slot_saveLuaScript(const QString& filePathName, const 
     }
 }
 
-void LuaScriptController::slot_luaScriptSaved()
+void LuaScriptController::slot_luaScriptSaved(const QString& filePathName)
 {
-    this->luaEditorModel->luaScriptSaved();
+    this->luaEditorModel->luaScriptSaved(filePathName);
+
+    // A runtime error belongs to the code, which has been running. After saving, the code is a new one, so the error is removed.
+    this->ptrLuaScriptAdapter->sendLuaScriptRuntimeError(filePathName, "", -1, -1, -1);
+
+    // Some systems remove the file from the watcher, when it is written
+    if (false == this->fileWatcher.files().contains(filePathName) && true == QFileInfo::exists(filePathName))
+    {
+        this->fileWatcher.addPath(filePathName);
+    }
+}
+
+void LuaScriptController::slot_reloadLuaScript(const QString& filePathName)
+{
+    QString content;
+    if (false == LuaScript::readScriptFile(filePathName, content))
+    {
+        qDebug() << "Error on reloading lua script for file path name: " << filePathName;
+        return;
+    }
+
+    this->luaEditorModel->applyReloadedContent(filePathName, content);
+}
+
+void LuaScriptController::onWatchedFileChanged(const QString& filePathName)
+{
+    this->changedFiles.insert(filePathName);
+    this->changedFilesTimer.start();
+}
+
+void LuaScriptController::processChangedFiles(void)
+{
+    const QSet<QString> changedFiles = this->changedFiles;
+    this->changedFiles.clear();
+
+    for (const QString& filePathName : changedFiles)
+    {
+        // Is the script still opened?
+        if (Q_NULLPTR == this->luaEditorModel->getEditorModelItemByFilePathName(filePathName))
+        {
+            continue;
+        }
+
+        if (false == QFileInfo::exists(filePathName))
+        {
+            // Deleted or being replaced. If it comes back, it is detected by the next change of an other file or when saving.
+            continue;
+        }
+
+        // Editors, which replace the file, remove it from the watcher
+        if (false == this->fileWatcher.files().contains(filePathName))
+        {
+            this->fileWatcher.addPath(filePathName);
+        }
+
+        QString content;
+        if (false == LuaScript::readScriptFile(filePathName, content))
+        {
+            continue;
+        }
+
+        this->luaEditorModel->luaScriptChangedExternally(filePathName, content);
+    }
 }
 
 void LuaScriptController::slot_sendLuaScriptError(const QString& filePathName, const QString& errorMessage, int line, int start, int end)
 {
-    // If there is no such lua script so far, create it first and then send the error
     bool success = this->ptrLuaScriptAdapter->sendLuaScriptRuntimeError(filePathName, errorMessage, line, start, end);
     if (false == success)
     {
+        // An empty message only removes an error. Opening the lua script just for that makes no sense.
+        if (true == errorMessage.isEmpty())
+        {
+            return;
+        }
+
+        // If there is no such lua script so far, create it first and then send the error
         this->slot_createLuaScript(filePathName);
         this->ptrLuaScriptAdapter->sendLuaScriptRuntimeError(filePathName, errorMessage, line, start, end);
     }

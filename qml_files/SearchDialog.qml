@@ -2,206 +2,353 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
-import QtQuick.Dialogs
 
 import NOWALuaScript
 
-// Search Window
-Window
+// Search and replace bar, shown at the top right of the editor (Ctrl+F: search, Ctrl+H: search and replace).
+// - Takes over the selected text or the word under the cursor.
+// - Marks all matches while typing (yellow), the current match is orange and selected in the editor.
+// - Return: next match, Shift+Return: previous match, F3 / Shift+F3 also work in the editor. Escape closes the bar.
+// - Replace replaces only the current match and goes to the next one. Replace All is one undo step (Ctrl+Z).
+Rectangle
 {
     id: root;
-    width: 300;
-    height: 400;
+    objectName: "searchBar";
+
+    width: 520;
+    height: contentColumn.implicitHeight + 16;
     visible: false;
-    title: "Search and Replace";
 
-    // No Qt.WindowStaysOnTopHint — that was overlapping every other application on the OS.
-    // Qt.Dialog ties the window to its parent and raises with it.
-    // Set transientParent = <your ApplicationWindow id> from outside so the OS groups them.
-    flags: Qt.Window;
+    color: "#2F4F4F";
+    border.color: "#7FA7A7";
+    border.width: 1;
+    radius: 4;
 
-    property bool caseSensitive: false;
+    // The current LuaEditor (LuaEditorQml), set from Main.qml
+    property var editor: null;
+
+    property bool replaceVisible: false;
+    property bool caseSensitive: true;
     property bool wholeWord: false;
+    property int currentMatch: 0;
     property int matchCount: 0;
+    property string infoText: "";
 
-    onVisibleChanged:
+    function openSearch(withReplace)
     {
-        if (visible)
+        if (root.editor)
         {
-            // FIX Issue 3: Always start with an empty search box.
-            // No pre-fill, no pending text, no stale word from a previous session.
-            searchField.text = "";
-            root.matchCount = 0;
-
-            // FIX Issue 2 (Return key): requestActivate() asks the OS to give this
-            // Window actual keyboard focus.  Without it the Window is visible but
-            // key events still go to the main window behind it, so Keys.onReturnPressed
-            // in searchField never fires.
-            // raise() brings it to the front first, then requestActivate() grabs focus.
-            root.raise();
-            root.requestActivate();
-
-            // forceActiveFocus() routes QML keyboard events to searchField once the
-            // Window has OS focus.
-            searchField.forceActiveFocus();
+            let proposal = root.editor.getSearchTextProposal();
+            if (proposal !== "")
+            {
+                searchField.text = proposal;
+            }
         }
-        else
+
+        root.replaceVisible = withReplace;
+        root.infoText = "";
+        root.visible = true;
+
+        searchField.forceActiveFocus();
+        searchField.selectAll();
+
+        root.refreshSearch();
+    }
+
+    function closeSearch()
+    {
+        if (!root.visible)
         {
-            // Window closing — clear the search highlight in the editor
-            NOWALuaEditorModel.clearSearch();
+            return;
+        }
+
+        root.visible = false;
+        NOWALuaEditorModel.clearSearch();
+        root.currentMatch = 0;
+        root.matchCount = 0;
+        root.infoText = "";
+
+        if (root.editor)
+        {
+            root.editor.focusEditor();
         }
     }
 
-    // Draggable title bar area
+    // Marks all matches, without moving the cursor. Also used, when the tab changes.
+    function refreshSearch()
+    {
+        if (!root.visible)
+        {
+            return;
+        }
+
+        if (searchField.text === "")
+        {
+            NOWALuaEditorModel.clearSearch();
+            root.currentMatch = 0;
+            root.matchCount = 0;
+            return;
+        }
+
+        NOWALuaEditorModel.searchInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
+    }
+
+    function findNext(backwards)
+    {
+        if (!root.visible)
+        {
+            root.openSearch(root.replaceVisible);
+        }
+
+        if (searchField.text === "")
+        {
+            return;
+        }
+
+        root.infoText = "";
+        NOWALuaEditorModel.searchNextInTextEdit(searchField.text, root.wholeWord, root.caseSensitive, backwards);
+    }
+
+    function replaceCurrent()
+    {
+        if (searchField.text === "")
+        {
+            return;
+        }
+
+        root.infoText = "";
+        NOWALuaEditorModel.replaceInTextEdit(searchField.text, replaceField.text, root.wholeWord, root.caseSensitive);
+    }
+
+    function replaceAll()
+    {
+        if (searchField.text === "")
+        {
+            return;
+        }
+
+        NOWALuaEditorModel.replaceAllInTextEdit(searchField.text, replaceField.text, root.wholeWord, root.caseSensitive);
+    }
+
+    // Swallow clicks, so that they do not reach the editor below
     MouseArea
     {
-        id: dragArea;
         anchors.fill: parent;
+        acceptedButtons: Qt.AllButtons;
+    }
 
-        property var clickOffset: Qt.point(0, 0);
-
-        onClicked: (mouse)=>
-        {
-            clickOffset = Qt.point(mouse.x, mouse.y);
-        }
-
-        onPositionChanged:
-        {
-            root.x = mouse.x - clickOffset.x + root.x;
-            root.y = mouse.y - clickOffset.y + root.y;
-        }
+    Timer
+    {
+        id: liveSearchTimer;
+        interval: 150;
+        repeat: false;
+        onTriggered: root.refreshSearch();
     }
 
     ColumnLayout
     {
-        anchors.fill: parent;
+        id: contentColumn;
+
+        anchors.left: parent.left;
+        anchors.right: parent.right;
+        anchors.top: parent.top;
         anchors.margins: 8;
+        spacing: 4;
 
-        Label
+        RowLayout
         {
-            text: "Search:";
-        }
-
-        TextField
-        {
-            id: searchField;
             Layout.fillWidth: true;
+            spacing: 4;
 
-            // FIX Issue 2: Return key triggers search.
-            // Works because onVisibleChanged now calls requestActivate() + forceActiveFocus()
-            // so this TextField actually receives OS keyboard events.
-            Keys.onReturnPressed:
+            ToolButton
             {
-                NOWALuaEditorModel.searchInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
+                text: root.replaceVisible ? "▾" : "▸";
+                font.pixelSize: 16;
+                Layout.preferredWidth: 32;
+                ToolTip.visible: hovered;
+                ToolTip.text: "Toggle replace (Ctrl+H)";
+                onClicked: root.replaceVisible = !root.replaceVisible;
             }
-        }
 
-        Label
-        {
-            text: "Replace with:";
-        }
-
-        TextField
-        {
-            id: replaceField;
-            Layout.fillWidth: true;
-
-            Keys.onReturnPressed:
+            TextField
             {
-                NOWALuaEditorModel.replaceInTextEdit(searchField.text, replaceField.text);
-            }
-        }
+                id: searchField;
 
-        Label
-        {
-            text: "Match count: " + root.matchCount;
+                Layout.fillWidth: true;
+                placeholderText: "Search";
+                selectByMouse: true;
+
+                onTextEdited: liveSearchTimer.restart();
+
+                Keys.onReturnPressed: (event) =>
+                {
+                    liveSearchTimer.stop();
+                    root.findNext((event.modifiers & Qt.ShiftModifier) !== 0);
+                    event.accepted = true;
+                }
+
+                Keys.onEnterPressed: (event) =>
+                {
+                    liveSearchTimer.stop();
+                    root.findNext((event.modifiers & Qt.ShiftModifier) !== 0);
+                    event.accepted = true;
+                }
+
+                Keys.onEscapePressed: (event) =>
+                {
+                    root.closeSearch();
+                    event.accepted = true;
+                }
+            }
+
+            Label
+            {
+                Layout.preferredWidth: 90;
+                horizontalAlignment: Text.AlignHCenter;
+                color: (searchField.text !== "" && root.matchCount === 0) ? "#FF8080" : "white";
+                text:
+                {
+                    if (searchField.text === "")
+                    {
+                        return "";
+                    }
+                    if (root.matchCount === 0)
+                    {
+                        return "No results";
+                    }
+                    if (root.currentMatch > 0)
+                    {
+                        return root.currentMatch + " of " + root.matchCount;
+                    }
+                    return root.matchCount + (root.matchCount === 1 ? " result" : " results");
+                }
+            }
+
+            ToolButton
+            {
+                text: "Aa";
+                checkable: true;
+                checked: root.caseSensitive;
+                font.bold: checked;
+                Layout.preferredWidth: 36;
+                ToolTip.visible: hovered;
+                ToolTip.text: "Match case";
+                onToggled:
+                {
+                    root.caseSensitive = checked;
+                    root.refreshSearch();
+                }
+            }
+
+            ToolButton
+            {
+                text: "W";
+                checkable: true;
+                checked: root.wholeWord;
+                font.bold: checked;
+                Layout.preferredWidth: 36;
+                ToolTip.visible: hovered;
+                ToolTip.text: "Match whole word";
+                onToggled:
+                {
+                    root.wholeWord = checked;
+                    root.refreshSearch();
+                }
+            }
+
+            ToolButton
+            {
+                text: "↑";
+                Layout.preferredWidth: 32;
+                enabled: searchField.text !== "";
+                ToolTip.visible: hovered;
+                ToolTip.text: "Previous match (Shift+Return, Shift+F3)";
+                onClicked: root.findNext(true);
+            }
+
+            ToolButton
+            {
+                text: "↓";
+                Layout.preferredWidth: 32;
+                enabled: searchField.text !== "";
+                ToolTip.visible: hovered;
+                ToolTip.text: "Next match (Return, F3)";
+                onClicked: root.findNext(false);
+            }
+
+            ToolButton
+            {
+                text: "✕";
+                Layout.preferredWidth: 32;
+                ToolTip.visible: hovered;
+                ToolTip.text: "Close (Escape)";
+                onClicked: root.closeSearch();
+            }
         }
 
         RowLayout
         {
-            CheckBox
+            Layout.fillWidth: true;
+            spacing: 4;
+            visible: root.replaceVisible;
+
+            Item
             {
-                id: wholeWordCheckbox;
-                text: "Match whole word";
-                checked: false;
-                onCheckedChanged: root.wholeWord = wholeWordCheckbox.checked;
+                Layout.preferredWidth: 32;
             }
 
-            CheckBox
+            TextField
             {
-                id: caseSensitiveCheckbox;
-                text: "Case sensitive";
-                checked: false;
-                onCheckedChanged: root.caseSensitive = caseSensitiveCheckbox.checked;
+                id: replaceField;
+
+                Layout.fillWidth: true;
+                placeholderText: "Replace";
+                selectByMouse: true;
+
+                Keys.onReturnPressed: (event) =>
+                {
+                    root.replaceCurrent();
+                    event.accepted = true;
+                }
+
+                Keys.onEnterPressed: (event) =>
+                {
+                    root.replaceCurrent();
+                    event.accepted = true;
+                }
+
+                Keys.onEscapePressed: (event) =>
+                {
+                    root.closeSearch();
+                    event.accepted = true;
+                }
+            }
+
+            Button
+            {
+                text: "Replace";
+                enabled: searchField.text !== "";
+                ToolTip.visible: hovered;
+                ToolTip.text: "Replaces the selected match and goes to the next one (Return)";
+                onClicked: root.replaceCurrent();
+            }
+
+            Button
+            {
+                text: "Replace All";
+                enabled: searchField.text !== "" && root.matchCount > 0;
+                ToolTip.visible: hovered;
+                ToolTip.text: "Replaces all matches. Can be undone with Ctrl+Z";
+                onClicked: root.replaceAll();
             }
         }
 
-        ColumnLayout
+        Label
         {
-            RowLayout
-            {
-                Button
-                {
-                    Layout.preferredWidth: 140;
-                    text: "Search";
-                    enabled: searchField.text !== "";
-                    onClicked: NOWALuaEditorModel.searchInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
-                }
-
-                Button
-                {
-                    Layout.preferredWidth: 140;
-                    text: "Search/Continue";
-                    enabled: searchField.text !== "";
-                    onClicked: NOWALuaEditorModel.searchContinueInTextEdit(searchField.text, root.wholeWord, root.caseSensitive);
-                }
-            }
-
-            RowLayout
-            {
-                Button
-                {
-                    Layout.preferredWidth: 140;
-                    text: "Replace";
-                    enabled: searchField.text !== "" && replaceField.text !== "";
-                    onClicked: NOWALuaEditorModel.replaceInTextEdit(searchField.text, replaceField.text);
-                }
-
-                Button
-                {
-                    Layout.preferredWidth: 140;
-                    text: "Close";
-                    onClicked:
-                    {
-                        root.visible = false;
-                        // onVisibleChanged(false) calls clearSearch() already,
-                        // but also clearing the model's selected text here ensures
-                        // no stale value is carried over.
-                        NOWALuaEditorModel.setSelectedSearchText("");
-                        searchField.text = "";
-                        replaceField.text = "";
-                    }
-                }
-            }
-        }
-    }
-
-    Connections
-    {
-        target: NOWALuaEditorModel;
-
-        // FIX Issue 3: Only update searchField when the window is already open
-        // (the user selected text while mid-search — a useful live update).
-        // When the window is closed this does nothing, so opening the window
-        // fresh always shows an empty box regardless of what was selected.
-        function onSignal_setSelectedSearchText(searchText)
-        {
-            if (root.visible && searchText !== "")
-            {
-                searchField.text = searchText;
-            }
-            // Always acknowledge so the model does not hold a stale copy
-            NOWALuaEditorModel.setSelectedSearchText("");
+            Layout.fillWidth: true;
+            visible: root.infoText !== "";
+            text: root.infoText;
+            color: "#C0FFC0";
         }
     }
 
@@ -209,13 +356,15 @@ Window
     {
         target: LuaScriptQmlAdapter;
 
-        // FIX Issue 1: matchCount is now emitted exactly once after the full
-        // rehighlight in searchInTextEdit(), not once per line.
-        // So this handler fires once with the correct final total instead of
-        // flickering through hundreds of partial counts.
-        function onSignal_resultSearchMatchCount(matchCount)
+        function onSignal_resultSearch(currentMatch, matchCount)
         {
+            root.currentMatch = currentMatch;
             root.matchCount = matchCount;
+        }
+
+        function onSignal_resultReplaceAll(replacedCount)
+        {
+            root.infoText = replacedCount === 0 ? "Nothing replaced." : (replacedCount + " replaced.");
         }
     }
 }

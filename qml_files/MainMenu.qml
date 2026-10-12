@@ -72,6 +72,81 @@ MenuBar
        }
     }
 
+    // Project: A folder with lua files, shown as tree on the left side
+    FolderDialog
+    {
+        id: projectFolderDialog;
+        title: "Open Folder";
+        currentFolder: Qt.resolvedUrl("../../media/projects");
+
+        onAccepted: NOWAProjectModel.openFolder(projectFolderDialog.selectedFolder.toString());
+    }
+
+    FileDialog
+    {
+        id: projectOpenDialog;
+        title: "Open Project";
+        currentFolder: Qt.resolvedUrl("../../media/projects");
+        nameFilters: ["NOWA Lua project (*.nowaluaproj)"];
+
+        onAccepted: NOWAProjectModel.openProject(projectOpenDialog.selectedFile.toString());
+    }
+
+    FileDialog
+    {
+        id: projectSaveDialog;
+        title: "Save Project As";
+        fileMode: FileDialog.SaveFile;
+        defaultSuffix: "nowaluaproj";
+        nameFilters: ["NOWA Lua project (*.nowaluaproj)"];
+
+        onAccepted: NOWAProjectModel.saveProject(projectSaveDialog.selectedFile.toString());
+    }
+
+    function saveProjectAs()
+    {
+        let proposal = NOWAProjectModel.getDefaultProjectFilePathName();
+        if (proposal !== "")
+        {
+            let proposalUrl = (Qt.platform.os === "windows" ? "file:///" : "file://") + proposal;
+            projectSaveDialog.currentFolder = proposalUrl.substring(0, proposalUrl.lastIndexOf("/"));
+            projectSaveDialog.selectedFile = proposalUrl;
+        }
+        projectSaveDialog.open();
+    }
+
+    function saveProject()
+    {
+        if (NOWAProjectModel.projectFilePathName === "")
+        {
+            mainMenu.saveProjectAs();
+        }
+        else
+        {
+            NOWAProjectModel.saveProject("");
+        }
+    }
+
+    MessageDialog
+    {
+        id: projectMessageDialog;
+        visible: false;
+        text: "Project";
+        informativeText: "--";
+        buttons: MessageDialog.Ok;
+    }
+
+    Connections
+    {
+        target: NOWAProjectModel;
+
+        function onProjectError(message)
+        {
+            projectMessageDialog.informativeText = message;
+            projectMessageDialog.visible = true;
+        }
+    }
+
     // Message dialog for unsaved changes prompt
     MessageDialog
     {
@@ -119,9 +194,61 @@ MenuBar
         {
             text: qsTr("Save");
             shortcut: "Ctrl+S";
-            enabled: NOWALuaEditorModel.hasChanges;
+            // Note: Always enabled, so that Ctrl+S always saves the current tab. Formerly it was bound to hasChanges, which was not always correct for the current tab.
             icon.name: "document-save";  // Common icon for "Save"
             onTriggered: NOWALuaEditorModel.requestSaveLuaScript();
+        }
+
+        MenuSeparator {}
+
+        Action
+        {
+            text: qsTr("Open Folder...");
+            onTriggered: projectFolderDialog.open();
+        }
+
+        Action
+        {
+            text: qsTr("Open Project...");
+            onTriggered: projectOpenDialog.open();
+        }
+
+        Action
+        {
+            text: qsTr("Save Project");
+            enabled: NOWAProjectModel.isOpen;
+            onTriggered: mainMenu.saveProject();
+        }
+
+        Action
+        {
+            text: qsTr("Save Project As...");
+            enabled: NOWAProjectModel.isOpen;
+            onTriggered: mainMenu.saveProjectAs();
+        }
+
+        Action
+        {
+            text: qsTr("Close Project");
+            enabled: NOWAProjectModel.isOpen;
+            onTriggered: NOWAProjectModel.closeProject();
+        }
+
+        Menu
+        {
+            title: qsTr("Recent Projects");
+            enabled: NOWAProjectModel.recentProjects.length > 0;
+
+            Repeater
+            {
+                model: NOWAProjectModel.recentProjects;
+
+                delegate: MenuItem
+                {
+                    text: modelData.split('/').pop().replace(".nowaluaproj", "") + "   (" + modelData + ")";
+                    onTriggered: NOWAProjectModel.openProject(modelData);
+                }
+            }
         }
 
         MenuSeparator {}

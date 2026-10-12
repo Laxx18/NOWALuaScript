@@ -8,8 +8,7 @@ QMutex LuaEditorModel::ms_mutex;
 
 LuaEditorModel::LuaEditorModel(QObject* parent)
     : QAbstractListModel(parent),
-    currentIndex(-1),
-    hasChanges(false)
+    currentIndex(-1)
 {
     this->loadRecentFiles();
 }
@@ -44,9 +43,20 @@ void LuaEditorModel::setCurrentIndex(int currentIndex)
     {
         return;
     }
+
+    // A running search belongs to the tab, in which it has been started. The search bar starts it again for the new tab.
+    LuaEditorModelItem* oldLuaEditorModelItem = this->getEditorModelItem(this->currentIndex);
+    if (Q_NULLPTR != oldLuaEditorModelItem)
+    {
+        Q_EMIT oldLuaEditorModelItem->signal_clearSearch();
+    }
+
     this->currentIndex = currentIndex;
 
     Q_EMIT currentIndexChanged();
+    // Attention: hasChanges belongs to the current lua script, so it changes with the tab. Formerly it kept the value of the last changed script,
+    // so that e.g. the save action stayed disabled for a tab with changes.
+    Q_EMIT hasChangesChanged();
 }
 
 int LuaEditorModel::getSize() const
@@ -54,14 +64,9 @@ int LuaEditorModel::getSize() const
     return this->luaScripts.size();
 }
 
-bool LuaEditorModel::getHasChanges(void)
+bool LuaEditorModel::getHasChanges(void) const
 {
-    if (-1 == this->currentIndex)
-    {
-        return false;
-    }
-
-    LuaEditorModelItem* luaEditorModelItem = this->luaScripts.at(this->currentIndex);
+    LuaEditorModelItem* luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
 
     if (Q_NULLPTR != luaEditorModelItem)
     {
@@ -71,15 +76,16 @@ bool LuaEditorModel::getHasChanges(void)
     return false;
 }
 
-void LuaEditorModel::setHasChanges(bool hasChanges)
+bool LuaEditorModel::getHasChangesAt(int index) const
 {
-    if (this->hasChanges == hasChanges)
-    {
-        return;
-    }
-    this->hasChanges = hasChanges;
+    LuaEditorModelItem* luaEditorModelItem = this->getEditorModelItem(index);
 
-    Q_EMIT hasChangesChanged();
+    if (Q_NULLPTR != luaEditorModelItem)
+    {
+        return luaEditorModelItem->getHasChanges();
+    }
+
+    return false;
 }
 
 int LuaEditorModel::rowCount(const QModelIndex& parent) const
@@ -132,7 +138,11 @@ void LuaEditorModel::addLuaScript(LuaEditorModelItem* luaScriptModelItem)
 
     connect(luaScriptModelItem, &LuaEditorModelItem::hasChangesChanged, this, [=]()
     {
-        this->setHasChanges(luaScriptModelItem->getHasChanges());
+        // Only the current lua script is relevant for the property
+        if (this->luaScripts.indexOf(luaScriptModelItem) == this->currentIndex)
+        {
+            Q_EMIT hasChangesChanged();
+        }
     });
 
     Q_EMIT signal_luaScriptAdded(luaScriptModelItem->getFilePathName(), luaScriptModelItem->getContent());
@@ -140,19 +150,38 @@ void LuaEditorModel::addLuaScript(LuaEditorModelItem* luaScriptModelItem)
 
 void LuaEditorModel::removeLuaScript(LuaEditorModelItem* luaEditorModelItem)
 {
-    int index = 0;
-    for (const auto& currentLuaEditorModelItem : this->luaScripts)
+    int index = this->luaScripts.indexOf(luaEditorModelItem);
+    if (-1 == index)
     {
-        if (currentLuaEditorModelItem == luaEditorModelItem)
-        {
-            break;
-        }
-        index++;
+        return;
     }
 
     beginRemoveRows(QModelIndex(), index, index);
-    delete this->luaScripts.takeAt(index);
+    LuaEditorModelItem* removedItem = this->luaScripts.takeAt(index);
     endRemoveRows();
+
+    // Attention: Not deleted at once. The editor of this lua script is only deleted later (deleteLater) and its qml still reacts e.g. on the syntax check
+    // of the next tab and reads its model. With a deleted model item this crashed, when closing the current tab.
+    removedItem->deleteLater();
+
+    // The tab bar corrects its current index itself. If it stays the same number, it is now another lua script.
+    if (this->currentIndex >= this->luaScripts.size())
+    {
+        this->setCurrentIndex(this->luaScripts.size() - 1);
+    }
+    Q_EMIT hasChangesChanged();
+}
+
+LuaEditorModelItem* LuaEditorModel::getEditorModelItemByFilePathName(const QString& filePathName) const
+{
+    for (const auto& luaEditorModelItem : this->luaScripts)
+    {
+        if (luaEditorModelItem->getFilePathName() == filePathName)
+        {
+            return luaEditorModelItem;
+        }
+    }
+    return Q_NULLPTR;
 }
 
 void LuaEditorModel::requestAddLuaScript(const QString& filePathName)
@@ -167,24 +196,21 @@ void LuaEditorModel::requestRemoveLuaScript(int index)
 
 void LuaEditorModel::requestSaveLuaScript(void)
 {
-    if (-1 == this->currentIndex)
+    LuaEditorModelItem* luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
+
+    if (Q_NULLPTR == luaEditorModelItem)
     {
         qDebug() << "Error: Could not save file because there is no lua script.";
+        return;
     }
 
-    LuaEditorModelItem* luaEditorModelItem = this->luaScripts.at(this->currentIndex);
+    // Attention: Always saves, if the user wants to save. Formerly it only saved, if the item had changes, which was not always correct.
+    Q_EMIT signal_requestSaveLuaScript(luaEditorModelItem->getFilePathName(), luaEditorModelItem->getContent());
+}
 
-    if (Q_NULLPTR != luaEditorModelItem)
-    {
-        if (true == luaEditorModelItem->getHasChanges())
-        {
-            Q_EMIT signal_requestSaveLuaScript(luaEditorModelItem->getFilePathName(), luaEditorModelItem->getContent());
-        }
-    }
-    else
-    {
-        qDebug() << "Error: Could not save file, because the corresponding lua editor model instance does not exist.";
-    }
+void LuaEditorModel::reloadLuaScript(const QString& filePathName)
+{
+    Q_EMIT signal_requestReloadLuaScript(filePathName);
 }
 
 void LuaEditorModel::addRecentFile(const QString& filePathName)
@@ -226,6 +252,18 @@ void LuaEditorModel::saveRecentFiles(void)
     settings.setValue("RecentFiles", this->recentFiles);
 }
 
+void LuaEditorModel::closePopups(void)
+{
+    if (true == ApiModel::instance()->getIsIntellisenseShown())
+    {
+        ApiModel::instance()->closeIntellisense();
+    }
+    if (true == ApiModel::instance()->getIsMatchedFunctionShown())
+    {
+        ApiModel::instance()->closeMatchedFunction();
+    }
+}
+
 int LuaEditorModel::count(void)
 {
     return this->luaScripts.size();
@@ -241,12 +279,12 @@ LuaEditorModelItem* LuaEditorModel::getEditorModelItem(int index) const
     return this->luaScripts.at(index);
 }
 
+// Attention: The functions below formerly did nothing at all, if the function popup was flagged as shown. That flag stayed true, when the popup
+// was closed by a click outside, so Tab, search, undo etc. did not work anymore. Now the popups are closed and the action is done.
+
 void LuaEditorModel::commentLines()
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -257,10 +295,7 @@ void LuaEditorModel::commentLines()
 
 void LuaEditorModel::unCommentLines()
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -271,10 +306,7 @@ void LuaEditorModel::unCommentLines()
 
 void LuaEditorModel::addTabToSelection()
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -285,10 +317,7 @@ void LuaEditorModel::addTabToSelection()
 
 void LuaEditorModel::removeTabFromSelection()
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -308,10 +337,7 @@ void LuaEditorModel::breakLine()
 
 void LuaEditorModel::searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive)
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -320,31 +346,36 @@ void LuaEditorModel::searchInTextEdit(const QString& searchText, bool wholeWord,
     }
 }
 
-void LuaEditorModel::searchContinueInTextEdit(const QString &searchText, bool wholeWord, bool caseSensitive)
+void LuaEditorModel::searchNextInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive, bool backwards)
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
     {
-        Q_EMIT luaEditorModelItem->signal_searchContinueInTextEdit(searchText, wholeWord, caseSensitive);
+        Q_EMIT luaEditorModelItem->signal_searchNextInTextEdit(searchText, wholeWord, caseSensitive, backwards);
     }
 }
 
-void LuaEditorModel::replaceInTextEdit(const QString& searchText, const QString& replaceText)
+void LuaEditorModel::replaceInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive)
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
     {
-        Q_EMIT luaEditorModelItem->signal_replaceInTextEdit(searchText, replaceText);
+        Q_EMIT luaEditorModelItem->signal_replaceInTextEdit(searchText, replaceText, wholeWord, caseSensitive);
+    }
+}
+
+void LuaEditorModel::replaceAllInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive)
+{
+    this->closePopups();
+
+    const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
+    if (Q_NULLPTR != luaEditorModelItem)
+    {
+        Q_EMIT luaEditorModelItem->signal_replaceAllInTextEdit(searchText, replaceText, wholeWord, caseSensitive);
     }
 }
 
@@ -359,10 +390,7 @@ void LuaEditorModel::clearSearch()
 
 void LuaEditorModel::undo()
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -373,10 +401,7 @@ void LuaEditorModel::undo()
 
 void LuaEditorModel::redo()
 {
-    if (true == ApiModel::instance()->getIsIntellisenseShown() || true == ApiModel::instance()->getIsMatchedFunctionShown())
-    {
-        return;
-    }
+    this->closePopups();
 
     const auto& luaEditorModelItem = this->getEditorModelItem(this->currentIndex);
     if (Q_NULLPTR != luaEditorModelItem)
@@ -414,11 +439,6 @@ void LuaEditorModel::sendVariableTextToEditor(const QString &text)
     }
 }
 
-void LuaEditorModel::setSelectedSearchText(const QString& searchText)
-{
-    Q_EMIT signal_setSelectedSearchText(searchText);
-}
-
 void LuaEditorModel::updateTitle(int row, const QString& newTitle)
 {
     if (row < 0 || row >= this->luaScripts.count())
@@ -434,17 +454,55 @@ void LuaEditorModel::updateTitle(int row, const QString& newTitle)
     Q_EMIT dataChanged(index, index, { TitleRole });
 }
 
-void LuaEditorModel::luaScriptSaved()
+void LuaEditorModel::luaScriptSaved(const QString& filePathName)
 {
-    if (-1 == this->currentIndex)
+    LuaEditorModelItem* luaEditorModelItem = this->getEditorModelItemByFilePathName(filePathName);
+
+    if (Q_NULLPTR == luaEditorModelItem)
     {
-        qDebug() << "Error: Could not save file because there is no lua script.";
+        qDebug() << "Error: Could not find the saved lua script: " << filePathName;
+        return;
     }
 
-    LuaEditorModelItem* luaEditorModelItem = this->luaScripts.at(this->currentIndex);
+    luaEditorModelItem->restoreContent();
+}
 
-    if (Q_NULLPTR != luaEditorModelItem)
+void LuaEditorModel::luaScriptChangedExternally(const QString& filePathName, const QString& content)
+{
+    LuaEditorModelItem* luaEditorModelItem = this->getEditorModelItemByFilePathName(filePathName);
+
+    if (Q_NULLPTR == luaEditorModelItem)
     {
-        luaEditorModelItem->restoreContent();
+        return;
     }
+
+    // E.g. the own save, or a tool which just touched the file
+    if (true == luaEditorModelItem->isSavedContent(content))
+    {
+        return;
+    }
+
+    if (false == luaEditorModelItem->getHasChanges())
+    {
+        this->applyReloadedContent(filePathName, content);
+    }
+    else
+    {
+        Q_EMIT signal_luaScriptChangedExternally(filePathName);
+    }
+}
+
+void LuaEditorModel::applyReloadedContent(const QString& filePathName, const QString& content)
+{
+    LuaEditorModelItem* luaEditorModelItem = this->getEditorModelItemByFilePathName(filePathName);
+
+    if (Q_NULLPTR == luaEditorModelItem)
+    {
+        return;
+    }
+
+    // First the item, so that the following text change of the editor is not seen as a change of the user
+    luaEditorModelItem->setReloadedContent(content);
+
+    Q_EMIT signal_luaScriptReloaded(filePathName, content);
 }

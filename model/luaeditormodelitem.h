@@ -3,7 +3,7 @@
 
 #include <QObject>
 #include <QMap>
-#include <QThread>
+#include <QElapsedTimer>
 
 #include "matchclassworker.h"
 
@@ -60,11 +60,32 @@ public:
 
     void restoreContent(void);
 
+    /**
+     * @brief Gets whether the given content equals the content, which has been loaded or saved the last time.
+     */
+    bool isSavedContent(const QString& content) const;
+
+    /**
+     * @brief Takes over the content, which has been reloaded from the file, as content without changes.
+     */
+    void setReloadedContent(const QString& content);
+
     void openProjectFolder(void);
 
     bool hasUnmatchedOpeningBracket(const QString& text);
 
     void detectVariables(void);
+
+    /**
+     * @brief Gets the api class name for a variable, whose type cannot be detected, by its name, e.g. a function parameter "gameObject" -> "GameObject" or
+     *        "physicsActiveComponent" -> "PhysicsActiveComponent". Returns an empty string, if there is no such class.
+     */
+    static QString getClassNameFromVariableName(const QString& variableName);
+
+    /**
+     * @brief Detects the variables again, if the content has changed. While typing at most once a second, at once if the cursor jumped or nothing has been detected so far.
+     */
+    void detectVariablesIfNeeded(bool cursorJumped);
 
     LuaVariableInfo getClassForVariableName(const QString& variableName);
 
@@ -103,9 +124,11 @@ Q_SIGNALS:
 
     void signal_searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
 
-    void signal_searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
+    void signal_searchNextInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive, bool backwards);
 
-    void signal_replaceInTextEdit(const QString& searchText, const QString& replaceText);
+    void signal_replaceInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive);
+
+    void signal_replaceAllInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive);
 
     void signal_clearSearch();
 
@@ -155,8 +178,13 @@ private:
     bool firstTimeContent;
     QMap<QString, LuaVariableInfo> variableMap;
 
+    // Attention: Runs on the gui thread. Formerly it ran in an own thread, but accessed the variables, the api model and the content of this item
+    // at the same time as the gui thread, which made the intellisense unreliable and could crash.
     MatchClassWorker* matchClassWorker;
-    QThread* matchClassThread;
+
+    bool variablesDirty;
+    QElapsedTimer variableDetectionTimer;
+    qint64 lastVariableDetectionDuration;
 
     QString matchedClassName;
     bool printToConsole;

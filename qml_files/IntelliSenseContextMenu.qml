@@ -12,6 +12,9 @@ Rectangle
     id: root;
     color: "white";
     visible: false;
+
+    // Attention: The flag must always follow the real visibility. If it stayed true, Tab, Return, Up and Down went to a hidden menu.
+    onVisibleChanged: NOWAApiModel.isIntellisenseShown = root.visible;
     width: 400; // Set a fixed width for the menu
     height: classNameRect.height + descriptionRect.height + inheritsRect.height + detailsArea.height + flickable.height;
 

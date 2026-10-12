@@ -23,6 +23,11 @@ public:
 
     Q_INVOKABLE LuaEditorModelItem* getEditorModelItem(int index) const;
 
+    /**
+     * @brief Gets whether the lua script at the given tab index has unsaved changes. Used when closing a tab, which is not the current one.
+     */
+    Q_INVOKABLE bool getHasChangesAt(int index) const;
+
     Q_INVOKABLE void commentLines(void);
 
     Q_INVOKABLE void unCommentLines(void);
@@ -35,9 +40,11 @@ public:
 
     Q_INVOKABLE void searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
 
-    Q_INVOKABLE void searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive);
+    Q_INVOKABLE void searchNextInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive, bool backwards);
 
-    Q_INVOKABLE void replaceInTextEdit(const QString& searchText, const QString& replaceText);
+    Q_INVOKABLE void replaceInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive);
+
+    Q_INVOKABLE void replaceAllInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive);
 
     Q_INVOKABLE void clearSearch(void);
 
@@ -51,7 +58,10 @@ public:
 
     Q_INVOKABLE void sendVariableTextToEditor(const QString& text);
 
-    Q_INVOKABLE void setSelectedSearchText(const QString& searchText);
+    /**
+     * @brief Reloads the lua script from the file and discards the changes in the editor. Used, if the file has been changed outside of the editor.
+     */
+    Q_INVOKABLE void reloadLuaScript(const QString& filePathName);
 
 public:
     Q_PROPERTY(bool hasChanges READ getHasChanges NOTIFY hasChangesChanged FINAL)
@@ -77,13 +87,31 @@ public:
 
     void removeLuaScript(LuaEditorModelItem* luaEditorModelItem);
 
-    bool getHasChanges(void);
-
-    void setHasChanges(bool hasChanges);
+    /**
+     * @brief Gets whether the current lua script has unsaved changes.
+     */
+    bool getHasChanges(void) const;
 
     void updateTitle(int row, const QString& newTitle);
 
-    void luaScriptSaved(void);
+    /**
+     * @brief Called, when the lua script with the given file path name has been saved. Attention: Must not use the current index, because the
+     *        current tab may already be another one.
+     */
+    void luaScriptSaved(const QString& filePathName);
+
+    /**
+     * @brief Called, when the file of a lua script has been changed outside of the editor. If there are no unsaved changes, the new content is taken over directly,
+     *        else the user is asked.
+     */
+    void luaScriptChangedExternally(const QString& filePathName, const QString& content);
+
+    /**
+     * @brief Takes over the given content as the new saved content of the lua script and shows it in the editor.
+     */
+    void applyReloadedContent(const QString& filePathName, const QString& content);
+
+    LuaEditorModelItem* getEditorModelItemByFilePathName(const QString& filePathName) const;
 public:
     /**
      * @brief instance is the getter used to receive the object of this singleton implementation.
@@ -113,9 +141,19 @@ Q_SIGNALS:
 
     void signal_requestSaveLuaScript(const QString& filePathName, const QString& content);
 
+    void signal_requestReloadLuaScript(const QString& filePathName);
+
     void signal_luaScriptAdded(const QString& filePathName, const QString& content);
 
-    void signal_setSelectedSearchText(const QString& searchText);
+    /**
+     * @brief The content of the lua script has been reloaded from the file. The editor must show the new content.
+     */
+    void signal_luaScriptReloaded(const QString& filePathName, const QString& content);
+
+    /**
+     * @brief The file has been changed outside of the editor, while there are unsaved changes in the editor. The user must decide.
+     */
+    void signal_luaScriptChangedExternally(const QString& filePathName);
 
     void hasChangesChanged();
 
@@ -126,14 +164,14 @@ private:
     void loadRecentFiles(void);
 
     void saveRecentFiles(void);
+
+    void closePopups(void);
 private:
     static LuaEditorModel* ms_pInstance;
     static QMutex ms_mutex;
 private:
     QList<LuaEditorModelItem*> luaScripts;
     int currentIndex;
-
-    bool hasChanges;
 
     QStringList recentFiles;
 };

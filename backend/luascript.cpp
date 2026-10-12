@@ -25,7 +25,7 @@ LuaScript::~LuaScript()
     }
 }
 
-bool LuaScript::loadScriptFromFile(const QString& filePathName)
+bool LuaScript::readScriptFile(const QString& filePathName, QString& content)
 {
     QFile file(filePathName);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -34,16 +34,27 @@ bool LuaScript::loadScriptFromFile(const QString& filePathName)
         return false;
     }
 
-    QString luaCode = file.readAll();
+    content = QString::fromUtf8(file.readAll());
     file.close();
+
+    // Must be replaced, else addTab, indent does not work correctly, as it messes up with \t
+    content.replace("\t", "    ");
+
+    return true;
+}
+
+bool LuaScript::loadScriptFromFile(const QString& filePathName)
+{
+    QString luaCode;
+    if (false == LuaScript::readScriptFile(filePathName, luaCode))
+    {
+        return false;
+    }
 
     // this->checkSyntax(luaCode);  // Perform a syntax check when loading the script
 
     // Parse the Lua script and update internal data structures for intellisense
     qDebug() << "Lua script loaded from file:" << filePathName;
-
-    // Must be replaced, else addTab, indent does not work correctly, as it messes up with \t
-    luaCode.replace("\t", "    ");
 
     this->content = luaCode;
 
@@ -65,7 +76,8 @@ QString LuaScript::getContent(void) const
 void LuaScript::checkSyntax(const QString& luaCode)
 {
     // Attempt to load the Lua code
-    int result = luaL_loadstring(this->lua, luaCode.toStdString().c_str());
+    const QByteArray luaCodeUtf8 = luaCode.toUtf8();
+    int result = luaL_loadbuffer(this->lua, luaCodeUtf8.constData(), luaCodeUtf8.size(), "script");
 
     if (result != 0)
     {
@@ -115,8 +127,9 @@ void LuaScript::checkSyntax(const QString& luaCode)
         Q_EMIT signal_syntaxCheckResult(true, -1, 0, 0, "");
     }
 
-    // If the code loads correctly, execute it
-    result = lua_pcall(this->lua, 0, LUA_MULTRET, 0);
+    // Attention: The compiled chunk is only removed and NOT executed. Formerly it was executed each second while typing: an endless loop in the script froze the editor,
+    // and the return values were never removed from the stack, so it grew all the time.
+    lua_pop(this->lua, 1);
 }
 
 void LuaScript::checkRuntimeError(const QString& errorMessage, int line, int start, int end)
@@ -144,16 +157,9 @@ void LuaScript::checkRuntimeError(const QString& errorMessage, int line, int sta
             qDebug() << "Error line set from 'at line X' to: " << line;
         }
 
-        if (-1 != line)
-        {
-            Q_EMIT signal_runtimeError(false, line, 0, 0, errorMessage);
-        }
-        else
-        {
-            Q_EMIT signal_runtimeError(true, -1, 0, 0, "");
-        }
-
-        lua_pop(this->lua, 1); // Pop the error message from the stack
+        // Attention: Also an error without line is an error. Formerly it was sent as "valid", which removed the error. The message is shown, just no line is marked.
+        // Note: Nothing has been pushed onto the lua stack, so nothing must be popped (formerly lua_pop corrupted the stack here).
+        Q_EMIT signal_runtimeError(false, line, 0, 0, errorMessage);
         return;
     }
     else

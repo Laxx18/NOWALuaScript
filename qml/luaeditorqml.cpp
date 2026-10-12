@@ -5,6 +5,7 @@
 #include "luascriptqmladapter.h"
 
 #include <QTextDocument>
+#include <QTextBlock>
 #include <QFontMetrics>
 #include <QQuickWindow>
 #include <QDebug>
@@ -81,25 +82,29 @@ void LuaEditorQml::setModel(LuaEditorModelItem* luaEditorModelItem)
         this->resetTextAfterDot();
     });
 
+    // Note: The search does not take the focus away from the search field, so that the user can press Return again and again.
+    // The found text is selected in the editor and stays visible (persistentSelection).
     connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_searchInTextEdit, this, [this](const QString& searchText, bool wholeWord, bool caseSensitive) {
-        this->luaEditorTextEdit->forceActiveFocus();
         this->highlighter->searchInTextEdit(searchText, wholeWord, caseSensitive);
     });
 
-    connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_searchContinueInTextEdit, this, [this](const QString& searchText, bool wholeWord, bool caseSensitive) {
-        this->luaEditorTextEdit->forceActiveFocus();
-        this->highlighter->searchContinueInTextEdit(searchText, wholeWord, caseSensitive);
+    connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_searchNextInTextEdit, this, [this](const QString& searchText, bool wholeWord, bool caseSensitive, bool backwards) {
+        this->highlighter->searchNextInTextEdit(searchText, wholeWord, caseSensitive, backwards);
     });
 
-    connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_replaceInTextEdit, this, [this](const QString& searchText, const QString& replaceText) {
-        this->luaEditorTextEdit->forceActiveFocus();
-        this->highlighter->replaceInTextEdit(searchText, replaceText);
+    connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_replaceInTextEdit, this, [this](const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive) {
+        this->highlighter->replaceInTextEdit(searchText, replaceText, wholeWord, caseSensitive);
+        this->resetTextAfterColon();
+        this->resetTextAfterDot();
+    });
+
+    connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_replaceAllInTextEdit, this, [this](const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive) {
+        this->highlighter->replaceAllInTextEdit(searchText, replaceText, wholeWord, caseSensitive);
         this->resetTextAfterColon();
         this->resetTextAfterDot();
     });
 
     connect(this->luaEditorModelItem, &LuaEditorModelItem::signal_clearSearch, this, [this] {
-        this->luaEditorTextEdit->forceActiveFocus();
         this->highlighter->clearSearch();
     });
 
@@ -172,11 +177,9 @@ void LuaEditorQml::setModel(LuaEditorModelItem* luaEditorModelItem)
         Q_EMIT signal_insertingNewLine(inserting);
     });
 
-    connect(this->highlighter, &LuaHighlighter::resultSearchMatchCount, LuaScriptQmlAdapter::instance(), &LuaScriptQmlAdapter::resultSearchMatchCount);
+    connect(this->highlighter, &LuaHighlighter::resultSearch, LuaScriptQmlAdapter::instance(), &LuaScriptQmlAdapter::resultSearch);
 
-    connect(this->highlighter, &LuaHighlighter::resultSearchContinuePosition, this, [this](const QRectF& cursorRectangle) {
-        Q_EMIT signal_resultSearchContinuePosition(cursorRectangle);
-    });
+    connect(this->highlighter, &LuaHighlighter::resultReplaceAll, LuaScriptQmlAdapter::instance(), &LuaScriptQmlAdapter::resultReplaceAll);
 
     Q_EMIT modelChanged();
 }
@@ -295,9 +298,10 @@ void LuaEditorQml::onParentChanged(QQuickItem* newParent)
 
 void LuaEditorQml::highlightWordUnderCursor(const QString& word)
 {
+    // Attention: Has its own highlight and does no longer use the search, else Ctrl + selecting a word destroyed a running search
     if (Q_NULLPTR != this->highlighter)
     {
-        this->highlighter->searchInTextEdit(word, true, true);
+        this->highlighter->setWordHighlight(word);
     }
 }
 
@@ -305,8 +309,74 @@ void LuaEditorQml::clearHighlightWordUnderCursor()
 {
     if (Q_NULLPTR != this->highlighter)
     {
-        this->highlighter->clearSearch();
+        this->highlighter->setWordHighlight(QString());
     }
+}
+
+void LuaEditorQml::indentSelection(void)
+{
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->addTabToSelection();
+        this->resetTextAfterColon();
+        this->resetTextAfterDot();
+    }
+}
+
+void LuaEditorQml::unindentSelection(void)
+{
+    if (Q_NULLPTR != this->highlighter)
+    {
+        this->highlighter->removeTabFromSelection();
+        this->resetTextAfterColon();
+        this->resetTextAfterDot();
+    }
+}
+
+QString LuaEditorQml::getSearchTextProposal(void)
+{
+    if (Q_NULLPTR == this->luaEditorTextEdit || Q_NULLPTR == this->quickTextDocument)
+    {
+        return QString();
+    }
+
+    const QString selectedText = this->luaEditorTextEdit->property("selectedText").toString();
+    if (false == selectedText.isEmpty())
+    {
+        // A selection over several lines is no search text
+        if (selectedText.contains(QChar('\n')) || selectedText.contains(QChar(QChar::ParagraphSeparator)))
+        {
+            return QString();
+        }
+        return selectedText;
+    }
+
+    // The word under the cursor
+    QTextDocument* document = this->quickTextDocument->textDocument();
+    const int cursorPosition = this->luaEditorTextEdit->property("cursorPosition").toInt();
+    QTextBlock block = document->findBlock(cursorPosition);
+    if (false == block.isValid())
+    {
+        return QString();
+    }
+
+    const QString text = block.text();
+    const int positionInBlock = cursorPosition - block.position();
+
+    auto isWordChar = [](QChar ch) { return ch.isLetterOrNumber() || ch == QChar('_'); };
+
+    int start = positionInBlock;
+    while (start > 0 && isWordChar(text.at(start - 1)))
+    {
+        --start;
+    }
+    int end = positionInBlock;
+    while (end < text.length() && isWordChar(text.at(end)))
+    {
+        ++end;
+    }
+
+    return text.mid(start, end - start);
 }
 
 void LuaEditorQml::resetTextAfterColon()
@@ -357,8 +427,8 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                     this->isInMatchedFunctionProcessing = false;
                     Q_EMIT requestCloseMatchedFunctionContextMenu();
                 }
-                this->typedAfterColon.removeLast();
-                this->typedAfterDot.removeLast();
+                this->typedAfterColon.chop(1);
+                this->typedAfterDot.chop(1);
 
             }
         }
@@ -373,8 +443,8 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                     this->isInMatchedFunctionProcessing = false;
                     Q_EMIT requestCloseMatchedFunctionContextMenu();
                 }
-                this->typedAfterDot.removeLast();
-                this->typedAfterColon.removeLast();
+                this->typedAfterDot.chop(1);
+                this->typedAfterColon.chop(1);
             }
         }
         else
@@ -385,10 +455,11 @@ void LuaEditorQml::handleKeywordPressed(QChar keyword)
                 // this->cursorPosition--;
                 // this->oldCursorPosition--;
                 // this->cursorPositionChanged(this->cursorPosition);
-                this->typedAfterDot.removeLast();
-                this->typedAfterColon.removeLast();
+                this->typedAfterDot.chop(1);
+                this->typedAfterColon.chop(1);
 
-                QString textAt = this->currentText[this->cursorPosition];
+                // Attention: The cursor can be at the very end of the text
+                QChar textAt = this->cursorPosition < this->currentText.size() ? this->currentText.at(this->cursorPosition) : QChar();
                 if (textAt == '(')
                 {
                     this->isInMatchedFunctionProcessing = false;
@@ -568,7 +639,8 @@ bool LuaEditorQml::processVariableBeingTyped(void)
     int lastSpacePos = this->currentLineTextVariable.lastIndexOf(' ');
     QString lastWord = (lastSpacePos != -1) ? this->currentLineTextVariable.mid(lastSpacePos + 1) : this->currentLineTextVariable;
     // **Remove unwanted leading characters**
-    lastWord.remove(QRegularExpression(R"(^[~+\-/*(#]+)"));
+    static const QRegularExpression leadingCharsRegex(R"(^[~+\-/*(#]+)");
+    lastWord.remove(leadingCharsRegex);
 
     this->currentLineTextVariable = lastWord;
 
@@ -624,7 +696,7 @@ bool LuaEditorQml::processVariableBeingTyped(void)
     }
 
     // Case 7: Ensure the word matches the variable pattern
-    QRegularExpression variablePattern(R"(^[a-zA-Z_][a-zA-Z0-9_]*$)");
+    static const QRegularExpression variablePattern(R"(^[a-zA-Z_][a-zA-Z0-9_]*$)");
     if (!variablePattern.match(lastWord).hasMatch())
     {
         return false;

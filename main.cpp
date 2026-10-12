@@ -9,6 +9,7 @@
 #include "appcommunicator.h"
 #include "model/luaeditormodel.h"
 #include "model/apimodel.h"
+#include "model/projectmodel.h"
 #include "qml/luaeditorqml.h"
 
 #include <QQuickWindow>
@@ -68,6 +69,7 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<LuaEditorModel>("NOWALuaScript", 1, 0, "NOWALuaEditorModel", LuaEditorModel::getSingletonTypeProvider);
     qmlRegisterUncreatableType<LuaEditorModelItem>("NOWALuaScript", 1, 0, "LuaScriptModelItem", "Not ment to be created in qml.");
     qmlRegisterSingletonType<ApiModel>("NOWALuaScript", 1, 0, "NOWAApiModel", ApiModel::getSingletonTypeProvider);
+    qmlRegisterSingletonType<ProjectModel>("NOWALuaScript", 1, 0, "NOWAProjectModel", ProjectModel::getSingletonTypeProvider);
     // Register LuaEditorQml as a QML type
     qmlRegisterType<LuaEditorQml>("NOWALuaScript", 1, 0, "LuaEditorQml");
 

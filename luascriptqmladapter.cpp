@@ -63,7 +63,12 @@ void LuaScriptQmlAdapter::luaApiPreparationResult(bool parseSilent, bool success
     Q_EMIT signal_luaApiPreparationResult(parseSilent, success, message);
 }
 
-void LuaScriptQmlAdapter::resultSearchMatchCount(int matchCount)
+void LuaScriptQmlAdapter::resultSearch(int currentMatch, int matchCount)
 {
-    Q_EMIT signal_resultSearchMatchCount(matchCount);
+    Q_EMIT signal_resultSearch(currentMatch, matchCount);
+}
+
+void LuaScriptQmlAdapter::resultReplaceAll(int replacedCount)
+{
+    Q_EMIT signal_resultReplaceAll(replacedCount);
 }

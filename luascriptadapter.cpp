@@ -10,26 +10,6 @@
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
 
-namespace
-{
-    // Helper function to clean up the input string
-    QString cleanString(const QString& str)
-    {
-        return str.trimmed().remove("\"").remove(",");
-    }
-
-    QString cleanString2(const QString& str)
-    {
-        QString resultString = str;
-        // Remove the last comma if it exists
-        if (resultString.endsWith(","))
-        {
-            resultString.chop(1); // Remove the last character
-        }
-        return resultString.trimmed().remove("\"");
-    }
-}
-
 LuaScriptAdapter::LuaScriptAdapter(QObject* parent)
     : QObject{parent},
     luaApiCreatedIntially(false)
@@ -156,7 +136,7 @@ bool LuaScriptAdapter::saveLuaScript(const QString& filePathName, const QString&
 
     if (true == success)
     {
-        Q_EMIT signal_luaScriptSaved();
+        Q_EMIT signal_luaScriptSaved(luaScript->getFilePathName());
     }
 
     return success;
@@ -194,25 +174,94 @@ QMap<QString, LuaScriptAdapter::ClassData> LuaScriptAdapter::prepareLuaApi(const
     {
         QString message = "Unable to open file: " + filePathName;
         qWarning() << message;
-        Q_EMIT signal_luaApiPrepareResult(false, false, message);
+        Q_EMIT signal_luaApiPrepareResult(parseSilent, false, message);
         return apiData;
     }
 
-    QTextStream in(&file);
-    QString currentClass;    // Class name
-    ClassData currentClassData; // Current class data being populated
-    QString currentMethod;    // Method name
-    MethodData currentMethodData; // Current method data
-    bool inChildsSection = false; // Flag to check if we are in the "childs" section
-    bool classOpened = false; // Flag to check if a class has been opened
-    bool methodOpened = false; // Flag to check if a method has been opened
+    // Attention: The api file is parsed by the indentation of the lines and not by its braces and quotes:
+    // - Level 1: class name, level 2: class attributes and "childs", level 3: method or constant name, level 4: method attributes.
+    // The generated file is not always valid lua: some descriptions contain unescaped quotes, sometimes a closing brace is missing or two are in one line,
+    // and some method names have a prefix like "number getMaxLength". The former parser counted braces and split at the first "=", so descriptions were cut,
+    // whole classes were merged into the previous one (e.g. GraphicsConfigurationComponent into GoalResult) and lines with "return" were skipped.
 
-    QRegularExpression classDefRegex(R"((\w+)\s*=\s*)");
-    QRegularExpression methodNameRegex(R"(^\s*(\w+)\s*=\s*$)");  // Matches method name followed by the opening brace in the next line
+    // key = "value" or key = "value",  The value is everything between the first and the last quote, so quotes inside are kept.
+    static const QRegularExpression keyValueRegex(R"rx(^(\w+)\s*=\s*"(.*)"\s*,?\s*$)rx");
+    // key = value without quotes
+    static const QRegularExpression keyRawValueRegex(R"(^(\w+)\s*=\s*([^{}"]*?)\s*,?\s*$)");
+    // name =  or  name = {  The name is the last identifier before the "="
+    static const QRegularExpression nameRegex(R"(^([^"=]*?)\s*=\s*(\{)?\s*$)");
+    static const QRegularExpression identifierRegex(R"([A-Za-z_]\w*)");
+
+    QTextStream in(&file);
+
+    QString currentClass;
+    QString currentMethod;
+    bool inChildsSection = false;
+
+    auto storeClassAttribute = [&apiData, &currentClass](const QString& key, const QString& value)
+    {
+        if (true == currentClass.isEmpty())
+        {
+            return;
+        }
+
+        ClassData& classData = apiData[currentClass];
+        if (key == "type")
+        {
+            classData.type = value;
+        }
+        else if (key == "description")
+        {
+            classData.description = value;
+        }
+        else if (key == "inherits")
+        {
+            classData.inherits = value;
+        }
+    };
+
+    auto storeMethodAttribute = [&apiData, &currentClass, &currentMethod](const QString& key, const QString& value)
+    {
+        if (true == currentClass.isEmpty() || true == currentMethod.isEmpty())
+        {
+            return;
+        }
+
+        MethodData& methodData = apiData[currentClass].methods[currentMethod];
+        if (key == "type")
+        {
+            methodData.type = value;
+        }
+        else if (key == "description")
+        {
+            methodData.description = value;
+        }
+        else if (key == "args")
+        {
+            methodData.args = value;
+        }
+        else if (key == "returns")
+        {
+            QString cleanedValue = value;
+            static const QRegularExpression bracketsRegex("^\\(|\\)$");
+            cleanedValue.replace(bracketsRegex, "");
+            methodData.returns = cleanedValue.trimmed();
+
+            if (methodData.returns == "nil")
+            {
+                methodData.returns = "void";
+            }
+        }
+        else if (key == "valuetype")
+        {
+            methodData.valuetype = value;
+        }
+    };
 
     while (!in.atEnd())
     {
-        QString line = in.readLine().trimmed();
+        const QString rawLine = in.readLine();
+        const QString line = rawLine.trimmed();
 
         // Skip empty lines or comments
         if (line.isEmpty() || line.startsWith("--"))
@@ -220,156 +269,117 @@ QMap<QString, LuaScriptAdapter::ClassData> LuaScriptAdapter::prepareLuaApi(const
             continue;
         }
 
-        // Skip the first 'return' statement
-        if (line.contains("return") && !line.contains("returns"))
+        // Indentation level: a tab or 4 spaces is one level
+        int tabs = 0;
+        int spaces = 0;
+        for (const QChar ch : rawLine)
+        {
+            if (ch == '\t')
+            {
+                ++tabs;
+            }
+            else if (ch == ' ')
+            {
+                ++spaces;
+            }
+            else
+            {
+                break;
+            }
+        }
+        const int level = tabs + spaces / 4;
+
+        QRegularExpressionMatch nameMatch = nameRegex.match(line);
+        QRegularExpressionMatch keyValueMatch = keyValueRegex.match(line);
+
+        if (false == nameMatch.hasMatch() && true == keyValueMatch.hasMatch())
+        {
+            QString value = keyValueMatch.captured(2);
+            value.replace("\\\"", "\"");
+
+            if (2 == level)
+            {
+                storeClassAttribute(keyValueMatch.captured(1), value);
+            }
+            else if (4 == level)
+            {
+                storeMethodAttribute(keyValueMatch.captured(1), value);
+            }
+            continue;
+        }
+
+        if (true == nameMatch.hasMatch())
+        {
+            QString name;
+            QRegularExpressionMatchIterator it = identifierRegex.globalMatch(nameMatch.captured(1));
+            while (it.hasNext())
+            {
+                name = it.next().captured(0);
+            }
+
+            if (true == name.isEmpty())
+            {
+                continue;
+            }
+
+            if (1 == level)
+            {
+                currentClass = name;
+                currentMethod.clear();
+                inChildsSection = false;
+                // Creates the class, also if it has no attributes
+                apiData[currentClass];
+            }
+            else if (2 == level && "childs" == name)
+            {
+                inChildsSection = true;
+            }
+            else if (3 == level && true == inChildsSection && false == currentClass.isEmpty())
+            {
+                currentMethod = name;
+                apiData[currentClass].methods[currentMethod];
+            }
+            continue;
+        }
+
+        // Only braces and commas, nothing to do, the indentation is used instead
+        bool onlyBraces = true;
+        for (const QChar ch : line)
+        {
+            if (ch != '{' && ch != '}' && ch != ',' && ch != ';' && false == ch.isSpace())
+            {
+                onlyBraces = false;
+                break;
+            }
+        }
+        if (true == onlyBraces)
         {
             continue;
         }
 
-        // Detect class definitions: Match lines containing the class name and "="
-        if (!classOpened)
+        QRegularExpressionMatch keyRawValueMatch = keyRawValueRegex.match(line);
+        if (true == keyRawValueMatch.hasMatch())
         {
-            QRegularExpressionMatch match = classDefRegex.match(line);
-            if (match.hasMatch())
+            if (2 == level)
             {
-                currentClass = match.captured(1);  // Capture the class name
-                currentClassData = ClassData();  // Initialize new class data
-                classOpened = true; // Mark class as opened
-                continue; // Proceed to check the next line for the opening brace
+                storeClassAttribute(keyRawValueMatch.captured(1), keyRawValueMatch.captured(2));
+            }
+            else if (4 == level)
+            {
+                storeMethodAttribute(keyRawValueMatch.captured(1), keyRawValueMatch.captured(2));
             }
         }
-
-        // Handle class attributes like type, description, inherits
-        if (classOpened && !inChildsSection)
-        {
-            if (line.contains("=") && !line.contains("{"))
-            {
-                QStringList parts = line.split("=");
-                QString key = cleanString(parts[0]);
-                QString value = cleanString(parts[1]);
-
-                if (key == "type")
-                {
-                    currentClassData.type = value;
-                }
-                else if (key == "description")
-                {
-                    currentClassData.description = value;
-                }
-                else if (key == "inherits")
-                {
-                    currentClassData.inherits = value;
-                }
-            }
-        }
-
-        // If a class was just opened, check the next line for the opening brace
-        if (classOpened)
-        {
-            if (line.contains("{"))
-            {
-                continue; // Proceed to the next line
-            }
-
-            // Check if we are entering the childs section
-            if (line.contains("childs"))
-            {
-                inChildsSection = true; // Set flag for child methods
-                continue; // Proceed to the next line
-            }
-
-            // If in the child section, look for attributes of the methods
-            if (inChildsSection)
-            {
-                QRegularExpressionMatch methodMatch = methodNameRegex.match(line);
-
-                if (methodMatch.hasMatch())
-                {
-                    currentMethod = methodMatch.captured(1); // Capture the method name
-                    currentMethodData = MethodData(); // New method data
-                    methodOpened = true; // Set flag for when brace will be detected
-                    continue;
-                }
-
-                // Detect attributes for methods (type, description, args, returns, valuetype)
-                if (methodOpened && line.contains("=") && !line.contains("{"))
-                {
-                    QStringList parts = line.split("=");
-                    QString key = cleanString(parts[0]);
-                    QString value = cleanString(parts[1]);
-
-                    if (key == "type")
-                    {
-                        currentMethodData.type = value;
-                    }
-                    else if (key == "description")
-                    {
-                        currentMethodData.description = value;
-                    }
-                    else if (key == "args")
-                    {
-                        currentMethodData.args = cleanString2(parts[1]);
-                    }
-                    else if (key == "returns")
-                    {
-                        QString cleanedValue = value;
-                        cleanedValue.replace(QRegularExpression("^\\(|\\)$"), "");
-                        currentMethodData.returns = cleanedValue.trimmed();
-
-                        if (currentMethodData.returns == "nil")
-                        {
-                            currentMethodData.returns = "void";
-                        }
-                    }
-                    else if (key == "valuetype")
-                    {
-                        currentMethodData.valuetype = value;
-                    }
-                }
-
-                // End of method
-                if (line.contains("}") && methodOpened)
-                {
-                    if (!currentMethod.isEmpty())
-                    {
-                        currentClassData.methods.insert(currentMethod, currentMethodData);
-                        currentMethod.clear();
-                        currentMethodData = MethodData();
-                        methodOpened = false;
-                    }
-                }
-
-                // End of current class
-                if (line == "}")
-                {
-                    apiData.insert(currentClass, currentClassData);
-                    currentClass.clear();
-                    currentClassData = ClassData();
-                    inChildsSection = false;
-                    classOpened = false;
-                }
-            }
-            else
-            {
-                // No childs section
-                if (line == "},")
-                {
-                    apiData.insert(currentClass, currentClassData);
-                    currentClass.clear();
-                    currentClassData = ClassData();
-                    inChildsSection = false;
-                    classOpened = false;
-                }
-            }
-        }
-    }
-
-    if (!currentClass.isEmpty())
-    {
-        apiData.insert(currentClass, currentClassData);
     }
 
     file.close();
+
+    if (true == apiData.isEmpty())
+    {
+        QString message = "Lua Api file: " + filePathName + " does not contain any class.";
+        qWarning() << message;
+        Q_EMIT signal_luaApiPrepareResult(parseSilent, false, message);
+        return apiData;
+    }
 
     // Resolve inheritance after parsing
     QSet<QString> visited;
@@ -383,7 +393,13 @@ QMap<QString, LuaScriptAdapter::ClassData> LuaScriptAdapter::prepareLuaApi(const
     QSettings settings("NOWA", "NOWALuaScript");
     settings.setValue("LuaApiFilePath", filePathName);
 
-    QString message = "Lua Api file: " + filePathName + " parsed successfully.";
+    int methodCount = 0;
+    for (auto it = apiData.cbegin(); it != apiData.cend(); ++it)
+    {
+        methodCount += it.value().methods.size();
+    }
+
+    QString message = "Lua Api file: " + filePathName + " parsed successfully. Classes: " + QString::number(apiData.size()) + ", methods and constants (with inherited): " + QString::number(methodCount);
     qDebug() << message;
     Q_EMIT signal_luaApiPrepareResult(parseSilent, true, message);
 

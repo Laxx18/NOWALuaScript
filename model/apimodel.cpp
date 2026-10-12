@@ -545,19 +545,35 @@ void ApiModel::showMatchedFunctionMenu(int mouseX, int mouseY)
 
 QVariantMap ApiModel::getMethodDetails(const QString& selectedClassName, const QString& methodName)
 {
-    const auto& methods = this->getMethodsForClassName(selectedClassName);
-    for (const auto& method : methods)
+    // Attention: Direct lookup. Formerly the whole method list of the class has been converted to a QVariantList for each call. This is called for each
+    // method call in each line, when the variables are detected, which made typing in big lua scripts very slow.
+    auto classIt = this->apiData.constFind(selectedClassName);
+    if (classIt == this->apiData.constEnd())
     {
-        QVariantMap methodMap = method.toMap();
-
-        // Check if the current method's name matches the requested method name
-        if (methodMap["name"].toString() == methodName)
-        {
-            return methodMap;
-        }
+        return QVariantMap();
     }
 
-    return QVariantMap();
+    auto methodIt = classIt.value().methods.constFind(methodName);
+    if (methodIt == classIt.value().methods.constEnd())
+    {
+        return QVariantMap();
+    }
+
+    // Value types are constants and no methods
+    if (methodIt.value().type == "value")
+    {
+        return QVariantMap();
+    }
+
+    QVariantMap methodMap;
+    methodMap["name"] = methodName;
+    methodMap["type"] = methodIt.value().type;
+    methodMap["description"] = methodIt.value().description;
+    methodMap["args"] = methodIt.value().args;
+    methodMap["returns"] = methodIt.value().returns;
+    methodMap["valuetype"] = methodIt.value().valuetype;
+
+    return methodMap;
 }
 
 bool ApiModel::getIsMatchedFunctionShown() const

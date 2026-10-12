@@ -1,28 +1,19 @@
 #include "qml/luahighlighter.h"
 
-#include <QtConcurrent>
 #include <QQuickTextDocument>
 #include <QAbstractTextDocumentLayout>
+#include <QStack>
 #include <QDebug>
 
 LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
     : QSyntaxHighlighter{parent},
     luaEditorTextEdit(luaEditorTextEdit),
     errorLine(-1),
-    oldErrorLine(-2),
-    errorStart(-1),
-    errorEnd(-1),
-    errorAlreadyCleared(true),
-    runtimeErrorLine(-1),
-    oldRuntimeErrorLine(-2),
-    runtimeErrorStart(-1),
-    runtimeErrorEnd(-1),
-    runtimeErrorAlreadyCleared(true),
+    lastCursorBlockNumber(-1),
     wholeWord(false),
-    caseSensitiv(false),
-    matchCount(0),
-    searchContinueMode(false),
-    currentMatchIndex(0)
+    caseSensitive(true),
+    searchResultTimer(Q_NULLPTR),
+    visibleMarksTimer(Q_NULLPTR)
 {
     this->errorFormat.setBackground(Qt::transparent); // No background
     this->errorFormat.setForeground(Qt::red); // Set error color to red
@@ -60,95 +51,260 @@ LuaHighlighter::LuaHighlighter(QQuickItem* luaEditorTextEdit, QObject* parent)
     rule.pattern = QRegularExpression("\"[^\"]*\"|'[^']*'");
     rule.format = quotationFormat;
     this->highlightingRules.append(rule);
+
+    // The match count is updated after the user stopped typing for a moment, and not for each key stroke.
+    this->searchResultTimer = new QTimer(this);
+    this->searchResultTimer->setSingleShot(true);
+    this->searchResultTimer->setInterval(150);
+    connect(this->searchResultTimer, &QTimer::timeout, this, &LuaHighlighter::emitSearchResult);
+
+    // While scrolling, the lines which become visible are highlighted, if their search or word highlight is outdated
+    this->visibleMarksTimer = new QTimer(this);
+    this->visibleMarksTimer->setSingleShot(true);
+    this->visibleMarksTimer->setInterval(30);
+    connect(this->visibleMarksTimer, &QTimer::timeout, this, &LuaHighlighter::rehighlightVisibleStaleBlocks);
+
+    if (Q_NULLPTR != this->document())
+    {
+        connect(this->document(), &QTextDocument::contentsChanged, this, [this]()
+        {
+            if (false == this->searchText.isEmpty())
+            {
+                this->searchResultTimer->start();
+            }
+        });
+    }
+}
+
+namespace
+{
+    // Remembers per line, with which search or word highlight the line has been highlighted
+    class MarkStateUserData : public QTextBlockUserData
+    {
+    public:
+        QString markState;
+        bool hasMarks = false;
+    };
+}
+
+QString LuaHighlighter::getMarkState(void) const
+{
+    if (false == this->searchText.isEmpty())
+    {
+        return QStringLiteral("S") + (this->wholeWord ? "1" : "0") + (this->caseSensitive ? "1" : "0") + this->searchText;
+    }
+    return QStringLiteral("W") + this->wordHighlight;
+}
+
+QQuickItem* LuaHighlighter::getFlickable(void)
+{
+    if (true == this->flickable.isNull() && Q_NULLPTR != this->luaEditorTextEdit)
+    {
+        QQuickItem* item = this->luaEditorTextEdit->parentItem();
+        while (Q_NULLPTR != item)
+        {
+            if (true == item->inherits("QQuickFlickable"))
+            {
+                this->flickable = item;
+                // Lines, which become visible by scrolling, are highlighted then
+                connect(item, SIGNAL(contentYChanged()), this->visibleMarksTimer, SLOT(start()));
+                connect(item, SIGNAL(heightChanged()), this->visibleMarksTimer, SLOT(start()));
+                break;
+            }
+            item = item->parentItem();
+        }
+    }
+    return this->flickable.data();
+}
+
+void LuaHighlighter::rehighlightVisibleStaleBlocks(void)
+{
+    // Attention: rehighlight() lets the text edit layout the whole document again, which takes seconds for big lua scripts. Even highlighting each line with a match
+    // takes long, if there are a lot of matches. Hence only the visible lines are highlighted again, if their search or word highlight is outdated.
+    // The other lines are highlighted, when they are scrolled into view.
+    if (Q_NULLPTR == this->document())
+    {
+        return;
+    }
+
+    QTextBlock firstBlock = this->document()->begin();
+    QTextBlock lastBlock = this->document()->lastBlock();
+
+    QQuickItem* flickableItem = this->getFlickable();
+    if (Q_NULLPTR != flickableItem && Q_NULLPTR != this->luaEditorTextEdit)
+    {
+        const QPointF topLeft = this->luaEditorTextEdit->mapFromItem(flickableItem, QPointF(0.0, 0.0));
+        const QPointF bottomLeft = this->luaEditorTextEdit->mapFromItem(flickableItem, QPointF(0.0, flickableItem->height()));
+
+        int firstPosition = 0;
+        int lastPosition = 0;
+        QMetaObject::invokeMethod(this->luaEditorTextEdit, "positionAt", Q_RETURN_ARG(int, firstPosition), Q_ARG(qreal, 0.0), Q_ARG(qreal, topLeft.y()));
+        QMetaObject::invokeMethod(this->luaEditorTextEdit, "positionAt", Q_RETURN_ARG(int, lastPosition), Q_ARG(qreal, 0.0), Q_ARG(qreal, bottomLeft.y()));
+
+        // Some lines more, so that nothing outdated is seen while scrolling a bit
+        const int margin = 50;
+        const int firstBlockNumber = qMax(0, this->document()->findBlock(firstPosition).blockNumber() - margin);
+        const int lastBlockNumber = qMin(this->document()->blockCount() - 1, this->document()->findBlock(lastPosition).blockNumber() + margin);
+
+        firstBlock = this->document()->findBlockByNumber(firstBlockNumber);
+        lastBlock = this->document()->findBlockByNumber(lastBlockNumber);
+    }
+
+    if (false == firstBlock.isValid() || false == lastBlock.isValid())
+    {
+        return;
+    }
+
+    const QString markState = this->getMarkState();
+    const QRegularExpression& activeExpression = false == this->searchText.isEmpty() ? this->searchExpression : this->wordHighlightExpression;
+    const bool hasActiveExpression = false == activeExpression.pattern().isEmpty() && true == activeExpression.isValid();
+
+    for (QTextBlock block = firstBlock; true == block.isValid(); block = block.next())
+    {
+        MarkStateUserData* userData = static_cast<MarkStateUserData*>(block.userData());
+        if (Q_NULLPTR == userData || userData->markState != markState)
+        {
+            const bool needsMarks = true == hasActiveExpression && true == activeExpression.match(block.text()).hasMatch();
+            if (Q_NULLPTR == userData || true == userData->hasMarks || true == needsMarks)
+            {
+                // Sets the user data in highlightBlock
+                this->rehighlightBlock(block);
+            }
+            else
+            {
+                // Nothing to see in this line, neither before nor now
+                userData->markState = markState;
+            }
+        }
+
+        if (block == lastBlock)
+        {
+            break;
+        }
+    }
+}
+
+void LuaHighlighter::rehighlightBlockNumber(int blockNumber)
+{
+    if (blockNumber < 0 || Q_NULLPTR == this->document())
+    {
+        return;
+    }
+
+    QTextBlock block = this->document()->findBlockByNumber(blockNumber);
+    if (true == block.isValid())
+    {
+        this->rehighlightBlock(block);
+    }
 }
 
 void LuaHighlighter::setErrorLine(int line, int start, int end)
 {
-    if (this->errorLine == line && this->errorStart == start && this->errorEnd == end)
+    Q_UNUSED(start)
+    Q_UNUSED(end)
+
+    if (this->errorLine == line)
     {
         return;  // Same error, no need to rehighlight
     }
-    this->errorLine  = line;
-    this->errorStart = start;
-    this->errorEnd   = end;
-    this->rehighlight();
+
+    // Only the old and the new line must be highlighted again, not the whole document
+    int oldErrorLine = this->errorLine;
+    this->errorLine = line;
+    this->rehighlightBlockNumber(oldErrorLine - 1);
+    this->rehighlightBlockNumber(this->errorLine - 1);
 }
 
 void LuaHighlighter::clearErrors()
 {
-    if (false == this->errorAlreadyCleared)
+    // Attention: Is called after each valid syntax check (each second while typing). Formerly the whole document has been highlighted again each time, which made the editor slow with a lot of text.
+    if (-1 == this->errorLine)
     {
-        // Clear highlight for the specific line
-        QTextCharFormat format; // Reset to default format
-        format.setBackground(Qt::transparent); // Set to transparent to clear highlight
-
-        QTextBlock block = document()->findBlockByLineNumber(this->errorLine);
-        if (block.isValid())
-        {
-            // Clear formatting for the entire block (line)
-            setFormat(block.firstLineNumber(), block.length(), format);
-        }
-
-        this->errorLine = -1;
-        this->errorStart = -1;
-        this->errorEnd = -1;
-
-        this->rehighlight(); // Rehighlight the document to clear errors
-
-        this->errorAlreadyCleared = true;
+        return;
     }
+
+    int oldErrorLine = this->errorLine;
+    this->errorLine = -1;
+    this->rehighlightBlockNumber(oldErrorLine - 1);
 }
 
 void LuaHighlighter::setRuntimeErrorLine(int line, int start, int end)
 {
-    if (this->oldRuntimeErrorLine != this->runtimeErrorLine)
+    Q_UNUSED(start)
+    Q_UNUSED(end)
+
+    if (line <= 0 || Q_NULLPTR == this->document())
     {
-        this->runtimeErrorLine = line;
-        this->runtimeErrorStart = start;
-        this->runtimeErrorEnd = end;
-        this->rehighlight(); // Rehighlight the document to apply changes
-        this->oldRuntimeErrorLine = this->runtimeErrorLine;
+        return;
     }
+
+    QTextBlock block = this->document()->findBlockByNumber(line - 1);
+    if (false == block.isValid())
+    {
+        return;
+    }
+
+    if (false == this->runtimeErrorCursor.isNull() && this->runtimeErrorCursor.block() == block && this->runtimeErrorBlockText == block.text())
+    {
+        return;  // Same error, no need to rehighlight
+    }
+
+    this->clearRuntimeErrors();
+
+    this->runtimeErrorCursor = QTextCursor(block);
+    this->runtimeErrorBlockText = block.text();
+    this->rehighlightBlock(block);
 }
 
 void LuaHighlighter::clearRuntimeErrors()
 {
-    if (false == this->runtimeErrorAlreadyCleared)
+    if (true == this->runtimeErrorCursor.isNull())
     {
-        // Clear highlight for the specific line
-        QTextCharFormat format; // Reset to default format
-        format.setBackground(Qt::transparent); // Set to transparent to clear highlight
-
-        QTextBlock block = document()->findBlockByLineNumber(this->runtimeErrorLine);
-        if (block.isValid())
-        {
-            // Clear formatting for the entire block (line)
-            setFormat(block.firstLineNumber(), block.length(), format);
-        }
-
-        this->runtimeErrorLine = -1;
-        this->runtimeErrorStart = -1;
-        this->runtimeErrorEnd = -1;
-
-        this->rehighlight(); // Rehighlight the document to clear errors
-
-        this->runtimeErrorAlreadyCleared = true;
+        return;
     }
+
+    QTextBlock oldBlock = this->runtimeErrorCursor.block();
+    this->runtimeErrorCursor = QTextCursor();
+    this->runtimeErrorBlockText.clear();
+
+    if (true == oldBlock.isValid())
+    {
+        this->rehighlightBlock(oldBlock);
+    }
+}
+
+QPair<QTextBlock, QTextBlock> LuaHighlighter::selectedBlocks(void) const
+{
+    QTextBlock startBlock = this->cursor.block();
+    QTextBlock endBlock = this->cursor.block();
+
+    if (true == this->cursor.hasSelection())
+    {
+        startBlock = this->cursor.document()->findBlock(this->cursor.selectionStart());
+        endBlock = this->cursor.document()->findBlock(this->cursor.selectionEnd());
+
+        // If the selection ends at the very start of a line (e.g. whole lines selected with the mouse), that line is not part of the selection
+        if (endBlock != startBlock && this->cursor.selectionEnd() == endBlock.position())
+        {
+            endBlock = endBlock.previous();
+        }
+    }
+
+    return qMakePair(startBlock, endBlock);
 }
 
 void LuaHighlighter::commentSelection()
 {
+    // Attention: Always take the current cursor and selection of the text edit. The stored cursor may be outdated, e.g. after a selection with the mouse.
+    this->cursor = this->getCursor();
+
+    const auto blocks = this->selectedBlocks();
+    QTextBlock startBlock = blocks.first;
+    QTextBlock endBlock = blocks.second;
+
     this->cursor.beginEditBlock();
-    QTextBlock startBlock = this->cursor.block();
-    QTextBlock endBlock = this->cursor.block();  // End block is the same as start for single-line selection
 
-    if (this->cursor.hasSelection())
-    {
-        startBlock = this->cursor.document()->findBlock(this->cursor.selectionStart());
-        endBlock = this->cursor.document()->findBlock(this->cursor.selectionEnd());
-    }
-
-    for (QTextBlock block = startBlock; block != endBlock.next(); block = block.next())
+    for (QTextBlock block = startBlock; block.isValid() && block != endBlock.next(); block = block.next())
     {
         QString blockText = block.text();
 
@@ -176,22 +332,19 @@ void LuaHighlighter::commentSelection()
 
 void LuaHighlighter::uncommentSelection()
 {
+    this->cursor = this->getCursor();
+
+    const auto blocks = this->selectedBlocks();
+    QTextBlock startBlock = blocks.first;
+    QTextBlock endBlock = blocks.second;
+
+    static const QRegularExpression commentRegex("^\\s*--");
+
     this->cursor.beginEditBlock();
-    QTextBlock startBlock = this->cursor.block();
-    QTextBlock endBlock = this->cursor.block();  // End block is the same as start for single-line selection
 
-    if (cursor.hasSelection())
-    {
-        startBlock = this->cursor.document()->findBlock(this->cursor.selectionStart());
-        endBlock = this->cursor.document()->findBlock(this->cursor.selectionEnd());
-    }
-
-    for (QTextBlock block = startBlock; block != endBlock.next(); block = block.next())
+    for (QTextBlock block = startBlock; block.isValid() && block != endBlock.next(); block = block.next())
     {
         QString blockText = block.text();
-
-        // Use regex to match lines that start with optional spaces followed by "--"
-        QRegularExpression commentRegex("^\\s*--");
 
         // If the line starts with "--", uncomment it
         if (commentRegex.match(blockText).hasMatch())
@@ -244,38 +397,16 @@ void LuaHighlighter::highlightMatchingBrackets()
         setFormat(bracketPair.first, 1, matchFormat);   // Highlight the opening bracket
         setFormat(bracketPair.second, 1, matchFormat);  // Highlight the closing bracket
     }
-    else
-    {
-        // No matching brackets found, reset any bold formatting.
-        this->removeMatchingBracketsBold();
-    }
-}
-
-void LuaHighlighter::removeMatchingBracketsBold()
-{
-    // Iterate over each character in the current block to check and reset bold formatting only.
-    for (int i = 0; i < currentBlock().length(); ++i)
-    {
-        QTextCharFormat charFormat = format(i);  // Get the current character format.
-
-        if (charFormat.fontWeight() == QFont::Bold)
-        {
-            // If the character is bold, reset the boldness without affecting other styles.
-            charFormat.setFontWeight(QFont::Normal);
-            setFormat(i, 1, charFormat);
-        }
-    }
 }
 
 void LuaHighlighter::undo()
 {
-    // Must be called, else crash does occur because of illegal state of document due to highlighting
-    this->clearSearch();
     if (!this->cursor.isNull() && this->cursor.document())
     {
         // The QTextCursor overload moves this->cursor to where the undo was applied.
         // We then push that position back to the QML TextEdit so onCursorRectangleChanged
         // fires and the Flickable scrolls to the undo location.
+        // Note: The search must no longer be cleared before. The crash came from the old search, which changed the document inside highlightBlock.
         this->cursor.document()->undo(&this->cursor);
         this->luaEditorTextEdit->setProperty("cursorPosition", this->cursor.position());
     }
@@ -283,7 +414,6 @@ void LuaHighlighter::undo()
 
 void LuaHighlighter::redo()
 {
-    this->clearSearch();
     if (!this->cursor.isNull() && this->cursor.document())
     {
         this->cursor.document()->redo(&this->cursor);
@@ -293,21 +423,21 @@ void LuaHighlighter::redo()
 
 void LuaHighlighter::insertSentText(int sizeToReplace, const QString& text)
 {
+    this->cursor = this->getCursor();
+    if (true == this->cursor.hasSelection())
+    {
+        this->cursor.setPosition(this->cursor.position());
+    }
+
     // Begin an edit block to group changes for undo/redo
     this->cursor.beginEditBlock();
 
     QTextCursor cursor = this->cursor;
 
-    // Ensure we have the correct text context
-    QString blockText = cursor.block().text();
-
     cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, sizeToReplace);
 
     // Replace selected text with the new auto-completed text
     cursor.insertText(text);
-
-    // For testing the new text
-    // QString newBlockText = cursor.block().text();
 
     // Update the editor cursor
     this->cursor = cursor;  // Update the cursor after the replacement
@@ -349,29 +479,36 @@ QPair<int, int> LuaHighlighter::findMatchingBrackets(const QString& text, int cu
 
 QTextCursor LuaHighlighter::getCursor()
 {
-    // Access the text edit object from the Lua editor to get the current cursor position
-    QVariant cursorVariant = this->luaEditorTextEdit->property("cursorPosition");
-    int cursorPosition = cursorVariant.toInt();
-
-    // Set up QTextCursor from the current text document and set its position
+    // Set up QTextCursor from the current text document
     QTextCursor cursor(document());
 
-    if (-1 == cursorPosition)
+    if (Q_NULLPTR == this->luaEditorTextEdit || Q_NULLPTR == document())
     {
         return cursor;
     }
-    cursor.setPosition(cursorPosition);
 
-    // If selection exists, adjust the cursor accordingly
-    QVariant selectionStartVariant = this->luaEditorTextEdit->property("selectionStart");
-    QVariant selectionEndVariant = this->luaEditorTextEdit->property("selectionEnd");
+    const int maxPosition = qMax(0, document()->characterCount() - 1);
 
-    if (selectionStartVariant.isValid() && selectionEndVariant.isValid())
+    int cursorPosition = this->luaEditorTextEdit->property("cursorPosition").toInt();
+    if (cursorPosition < 0)
     {
-        int selectionStart = selectionStartVariant.toInt();
-        int selectionEnd = selectionEndVariant.toInt();
-        cursor.setPosition(selectionStart);
-        cursor.setPosition(selectionEnd, QTextCursor::KeepAnchor);
+        return cursor;
+    }
+    cursorPosition = qMin(cursorPosition, maxPosition);
+
+    int selectionStart = qBound(0, this->luaEditorTextEdit->property("selectionStart").toInt(), maxPosition);
+    int selectionEnd = qBound(0, this->luaEditorTextEdit->property("selectionEnd").toInt(), maxPosition);
+
+    if (selectionStart != selectionEnd)
+    {
+        // Keep the direction of the selection: the anchor is the end, which is not the cursor
+        int anchor = (cursorPosition == selectionStart) ? selectionEnd : selectionStart;
+        cursor.setPosition(anchor);
+        cursor.setPosition(cursorPosition, QTextCursor::KeepAnchor);
+    }
+    else
+    {
+        cursor.setPosition(cursorPosition);
     }
 
     return cursor;
@@ -379,8 +516,16 @@ QTextCursor LuaHighlighter::getCursor()
 
 void LuaHighlighter::setCursorPosition(int cursorPosition)
 {
-    // Q_UNUSED(cursorPosition);
+    Q_UNUSED(cursorPosition);
     this->cursor = this->getCursor();
+
+    // Only the line with the cursor and the line where the cursor has been before are highlighted again (bracket matching)
+    int blockNumber = this->cursor.block().blockNumber();
+    if (blockNumber != this->lastCursorBlockNumber)
+    {
+        this->rehighlightBlockNumber(this->lastCursorBlockNumber);
+    }
+    this->lastCursorBlockNumber = blockNumber;
 
     QString text = this->cursor.block().text();
 
@@ -390,39 +535,26 @@ void LuaHighlighter::setCursorPosition(int cursorPosition)
         return;
     }
 
-    QTextBlock block = cursor.block(); // Get the block where the cursor is
-    this->rehighlightBlock(block);  // Reapply syntax highlighting
-#if 0
-    QChar currentChar = text.at(cursorPos);
-
-    // Performance optimization
-    if (currentChar == '(' || currentChar == ')')
-    {
-        this->rehighlight();  // Reapply syntax highlighting
-    }
-#endif
+    this->rehighlightBlock(this->cursor.block());  // Reapply syntax highlighting
 }
 
 void LuaHighlighter::addTabToSelection()
 {
-    this->cursor.beginEditBlock();
+    // Attention: Always take the current cursor and selection of the text edit. The stored cursor is only updated, when the cursor position changes,
+    // so a selection made e.g. with Ctrl+A or by dragging back to the same position has not been known, and Tab did nothing to the selected lines.
+    this->cursor = this->getCursor();
 
-    bool isMultiLine = false;
-    if (this->cursor.hasSelection())
-    {
-        QTextBlock sb = this->cursor.document()->findBlock(this->cursor.selectionStart());
-        QTextBlock eb = this->cursor.document()->findBlock(this->cursor.selectionEnd());
-        isMultiLine = (sb != eb);
-    }
+    const auto blocks = this->selectedBlocks();
+    bool isMultiLine = this->cursor.hasSelection() && blocks.first != blocks.second;
 
     QString indent = QString(4, ' ');
 
-    if (isMultiLine)
+    this->cursor.beginEditBlock();
+
+    if (true == isMultiLine)
     {
         // Indent all selected blocks from their start
-        QTextBlock startBlock = this->cursor.document()->findBlock(this->cursor.selectionStart());
-        QTextBlock endBlock   = this->cursor.document()->findBlock(this->cursor.selectionEnd());
-        for (QTextBlock block = startBlock; block != endBlock.next(); block = block.next())
+        for (QTextBlock block = blocks.first; block.isValid() && block != blocks.second.next(); block = block.next())
         {
             QTextCursor bc(block);
             bc.movePosition(QTextCursor::StartOfBlock);
@@ -433,7 +565,10 @@ void LuaHighlighter::addTabToSelection()
     {
         // No selection or intra-line: insert tab at current cursor position
         QTextCursor c = this->cursor;
-        if (c.hasSelection()) c.clearSelection();
+        if (c.hasSelection())
+        {
+            c.clearSelection();
+        }
         c.insertText(indent);
         this->cursor = c;
     }
@@ -443,46 +578,38 @@ void LuaHighlighter::addTabToSelection()
 
 void LuaHighlighter::removeTabFromSelection()
 {
+    this->cursor = this->getCursor();
+
+    const auto blocks = this->selectedBlocks();
+
     this->cursor.beginEditBlock();
 
-    // Determine if there's a selection, get start and end blocks
-    QTextBlock startBlock = this->cursor.block();
-    QTextBlock endBlock = this->cursor.block();
-
-    if (this->cursor.hasSelection())
-    {
-        startBlock = this->cursor.document()->findBlock(cursor.selectionStart());
-        endBlock = this->cursor.document()->findBlock(cursor.selectionEnd());
-    }
-
-    QString indent = QString(4, ' ');  // Create a string with 4 spaces
-
-    // Iterate over each selected block and remove up to `indentSpaces` spaces
-    for (QTextBlock block = startBlock; block != endBlock.next(); block = block.next())
+    // Iterate over each selected block and remove up to 4 spaces or one tab
+    for (QTextBlock block = blocks.first; block.isValid() && block != blocks.second.next(); block = block.next())
     {
         QString blockText = block.text();
-        int leadingSpacesCount = 0;
+        int charsToRemove = 0;
 
-        // Count how many leading spaces the block has
-        while (leadingSpacesCount < blockText.length() && blockText.at(leadingSpacesCount) == ' ' && leadingSpacesCount < 4)
+        if (false == blockText.isEmpty() && blockText.at(0) == '\t')
         {
-            leadingSpacesCount++;
+            charsToRemove = 1;
+        }
+        else
+        {
+            // Count how many leading spaces the block has
+            while (charsToRemove < blockText.length() && blockText.at(charsToRemove) == ' ' && charsToRemove < 4)
+            {
+                charsToRemove++;
+            }
         }
 
-        if (leadingSpacesCount > 0)
+        if (charsToRemove > 0)
         {
             // Remove the leading spaces from the block
             QTextCursor blockCursor(block);
             blockCursor.movePosition(QTextCursor::StartOfBlock);
-            blockCursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor, leadingSpacesCount);
-            blockCursor.removeSelectedText();  // Remove the leading spaces
-        }
-        else if (blockText.isEmpty() && block == endBlock)
-        {
-            // If the block is empty, simply add indentation
-            QTextCursor blockCursor(block);
-            blockCursor.movePosition(QTextCursor::StartOfBlock);
-            blockCursor.insertText(indent);  // Insert indentation if the line is empty
+            blockCursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor, charsToRemove);
+            blockCursor.removeSelectedText();
         }
     }
 
@@ -491,14 +618,16 @@ void LuaHighlighter::removeTabFromSelection()
 
 void LuaHighlighter::breakLine()
 {
+    this->cursor = this->getCursor();
+
     Q_EMIT insertingNewLineChanged(true); // Emit signal before inserting a new line
 
     this->cursor.beginEditBlock();
 
-    // Clear any active selection
+    // Return replaces a selected text, like in every other editor
     if (true == this->cursor.hasSelection())
     {
-        this->cursor.clearSelection();
+        this->cursor.removeSelectedText();
     }
 
     // Get the current block and determine the cursor's position within it
@@ -529,98 +658,384 @@ void LuaHighlighter::breakLine()
     Q_EMIT insertingNewLineChanged(false); // Emit signal after the new line is inserted
 }
 
+bool LuaHighlighter::setSearchParameters(const QString& searchText, bool wholeWord, bool caseSensitive)
+{
+    // A search is always within one line
+    QString cleanSearchText = searchText;
+    int newLinePos = cleanSearchText.indexOf(QChar('\n'));
+    if (-1 != newLinePos)
+    {
+        cleanSearchText = cleanSearchText.left(newLinePos);
+    }
+
+    if (this->searchText == cleanSearchText && this->wholeWord == wholeWord && this->caseSensitive == caseSensitive)
+    {
+        return false;
+    }
+
+    // The line with the old current match must be highlighted again
+    QTextBlock oldCurrentMatchBlock;
+    if (false == this->currentMatchCursor.isNull())
+    {
+        oldCurrentMatchBlock = this->currentMatchCursor.block();
+    }
+
+    this->searchText = cleanSearchText;
+    this->wholeWord = wholeWord;
+    this->caseSensitive = caseSensitive;
+    this->currentMatchCursor = QTextCursor();
+
+    if (true == this->searchText.isEmpty())
+    {
+        this->searchExpression = QRegularExpression();
+        this->rehighlightVisibleStaleBlocks();
+        if (true == oldCurrentMatchBlock.isValid())
+        {
+            this->rehighlightBlock(oldCurrentMatchBlock);
+        }
+        return true;
+    }
+
+    // The search text is always taken literally, so that e.g. "a.b" or "(x)" does not act as regular expression
+    QString pattern = QRegularExpression::escape(this->searchText);
+    if (true == this->wholeWord)
+    {
+        // Lua identifiers consist of letters, digits and underscore
+        pattern = "(?<![A-Za-z0-9_])" + pattern + "(?![A-Za-z0-9_])";
+    }
+
+    QRegularExpression::PatternOptions options = QRegularExpression::NoPatternOption;
+    if (false == this->caseSensitive)
+    {
+        options |= QRegularExpression::CaseInsensitiveOption;
+    }
+
+    this->searchExpression = QRegularExpression(pattern, options);
+
+    this->rehighlightVisibleStaleBlocks();
+    if (true == oldCurrentMatchBlock.isValid())
+    {
+        this->rehighlightBlock(oldCurrentMatchBlock);
+    }
+    return true;
+}
+
+QVector<QPair<int, int>> LuaHighlighter::collectMatches(void) const
+{
+    QVector<QPair<int, int>> matches;
+
+    if (true == this->searchText.isEmpty() || false == this->searchExpression.isValid() || Q_NULLPTR == this->document())
+    {
+        return matches;
+    }
+
+    // Note: toPlainText has the same character positions as the document, each line break counts as one character
+    const QString text = this->document()->toPlainText();
+
+    QRegularExpressionMatchIterator it = this->searchExpression.globalMatch(text);
+    while (it.hasNext())
+    {
+        QRegularExpressionMatch match = it.next();
+        if (match.capturedLength() > 0)
+        {
+            matches.append(qMakePair(match.capturedStart(), match.capturedLength()));
+        }
+    }
+
+    return matches;
+}
+
+void LuaHighlighter::emitSearchResult(void)
+{
+    if (true == this->searchText.isEmpty())
+    {
+        Q_EMIT resultSearch(0, 0);
+        return;
+    }
+
+    const auto matches = this->collectMatches();
+
+    int currentMatch = 0;
+    if (false == this->currentMatchCursor.isNull() && true == this->currentMatchCursor.hasSelection())
+    {
+        const int start = this->currentMatchCursor.selectionStart();
+        const int length = this->currentMatchCursor.selectionEnd() - start;
+        for (int i = 0; i < matches.size(); ++i)
+        {
+            if (matches[i].first == start && matches[i].second == length)
+            {
+                currentMatch = i + 1;
+                break;
+            }
+        }
+    }
+
+    Q_EMIT resultSearch(currentMatch, matches.size());
+}
+
+void LuaHighlighter::selectMatch(int start, int length)
+{
+    int oldBlockNumber = -1;
+    if (false == this->currentMatchCursor.isNull())
+    {
+        oldBlockNumber = this->currentMatchCursor.block().blockNumber();
+    }
+
+    this->currentMatchCursor = QTextCursor(this->document());
+    this->currentMatchCursor.setPosition(start);
+    this->currentMatchCursor.setPosition(start + length, QTextCursor::KeepAnchor);
+
+    // Selects the match in the text edit. The text edit scrolls to the cursor (onCursorRectangleChanged in LuaEditor.qml).
+    // The selection stays visible, even if the focus is in the search field (persistentSelection).
+    QMetaObject::invokeMethod(this->luaEditorTextEdit, "select", Q_ARG(int, start), Q_ARG(int, start + length));
+
+    this->rehighlightBlockNumber(oldBlockNumber);
+    this->rehighlightBlock(this->currentMatchCursor.block());
+}
 
 void LuaHighlighter::clearSearch()
 {
-    this->searchText = "";
-    this->replaceText = "";
-    this->matchCount = 0;
-    this->currentMatchIndex = 0;
-    this->searchContinueMode = false;
-    this->rehighlight();
-}
+    this->searchResultTimer->stop();
 
-void LuaHighlighter::searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitve)
-{
-    this->searchText = searchText;
-    this->wholeWord = wholeWord;
-    this->caseSensitiv = caseSensitve;
-    this->matchCount = 0;
-    this->currentMatchIndex = 0;
-    this->searchContinueMode = false;
-    this->rehighlight();
-    Q_EMIT resultSearchMatchCount(this->matchCount);
-}
-
-void LuaHighlighter::searchContinueInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitve)
-{
-    this->searchText = searchText; // Store the search text as a member variable
-    this->wholeWord = wholeWord;
-    this->caseSensitiv = caseSensitve;
-    if (this->currentMatchIndex > this->matchCount)
+    if (true == this->searchText.isEmpty())
     {
-        this->currentMatchIndex = 0;
-    }
-    this->matchCount = 0;
-    this->searchContinueMode = true;
-    ++this->currentMatchIndex;
-    this->rehighlight();
-}
-
-void LuaHighlighter::replaceInTextEdit(const QString& searchText, const QString& replaceText)
-{
-    if (searchText.isEmpty()) return;
-
-    this->searchText   = searchText;
-    this->replaceText  = "";          // Clear so highlightBlock never calls replaceInBlock
-    this->matchCount   = 0;
-    this->currentMatchIndex = 0;
-
-    // --- Do all replacements HERE, before rehighlight ---
-    QTextCursor cursor(this->document());
-    cursor.beginEditBlock();
-    QTextDocument::FindFlags flags;
-    if (this->caseSensitiv) flags |= QTextDocument::FindCaseSensitively;
-    if (this->wholeWord)    flags |= QTextDocument::FindWholeWords;
-
-    while (true)
-    {
-        cursor = this->document()->find(searchText, cursor, flags);
-        if (cursor.isNull()) break;
-        cursor.insertText(replaceText);
-    }
-    cursor.endEditBlock();
-
-    // Now rehighlight to show remaining matches / clear old ones
-    this->rehighlight();
-}
-
-void LuaHighlighter::replaceInBlock(int searchStart)
-{
-    // Begin an edit block to group changes for undo/redo
-    this->cursor.beginEditBlock();
-
-    QTextCursor cursor = this->cursor;
-    QTextBlock block = currentBlock();  // Get the current block
-
-    // Calculate the correct position within the block for replacing
-    cursor.setPosition(block.position() + searchStart, QTextCursor::MoveAnchor);
-    cursor.setPosition(block.position() + searchStart + searchText.length(), QTextCursor::KeepAnchor);
-
-    // Ensure we are within the valid range of the document
-    if (cursor.hasSelection() && cursor.selectedText() == searchText)
-    {
-        cursor.insertText(replaceText);  // Replace the selected text
+        return;
     }
 
-    this->cursor = cursor;  // Update the cursor after the replacement
+    QTextBlock oldCurrentMatchBlock;
+    if (false == this->currentMatchCursor.isNull())
+    {
+        oldCurrentMatchBlock = this->currentMatchCursor.block();
+    }
 
-    // End the edit block to finalize changes (allows for undo/redo)
-    this->cursor.endEditBlock();
+    this->searchText.clear();
+    this->searchExpression = QRegularExpression();
+    this->currentMatchCursor = QTextCursor();
+
+    // The old matches disappear and the word highlight is shown again
+    this->rehighlightVisibleStaleBlocks();
+    if (true == oldCurrentMatchBlock.isValid())
+    {
+        this->rehighlightBlock(oldCurrentMatchBlock);
+    }
+
+    Q_EMIT resultSearch(0, 0);
+}
+
+void LuaHighlighter::searchInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive)
+{
+    if (true == searchText.isEmpty())
+    {
+        this->clearSearch();
+        return;
+    }
+
+    // Highlights the lines with the old and new matches again, if something changed
+    this->setSearchParameters(searchText, wholeWord, caseSensitive);
+
+    this->emitSearchResult();
+}
+
+void LuaHighlighter::searchNextInTextEdit(const QString& searchText, bool wholeWord, bool caseSensitive, bool backwards)
+{
+    if (true == searchText.isEmpty())
+    {
+        this->clearSearch();
+        return;
+    }
+
+    // Highlights the lines with the old and new matches again, if something changed
+    this->setSearchParameters(searchText, wholeWord, caseSensitive);
+
+    const auto matches = this->collectMatches();
+    if (true == matches.isEmpty())
+    {
+        Q_EMIT resultSearch(0, 0);
+        return;
+    }
+
+    // Start at the current match, or if there is none, at the cursor of the text edit
+    int fromStart = -1;
+    int fromEnd = -1;
+    bool hasCurrentMatch = false == this->currentMatchCursor.isNull() && true == this->currentMatchCursor.hasSelection();
+    if (true == hasCurrentMatch)
+    {
+        fromStart = this->currentMatchCursor.selectionStart();
+        fromEnd = this->currentMatchCursor.selectionEnd();
+    }
+    else
+    {
+        QTextCursor editCursor = this->getCursor();
+        fromStart = editCursor.selectionStart();
+        fromEnd = editCursor.selectionStart();
+    }
+
+    int index = -1;
+    if (false == backwards)
+    {
+        for (int i = 0; i < matches.size(); ++i)
+        {
+            // Without a current match, a match at the cursor or around the cursor (e.g. the word taken over by Ctrl+F) is the first one
+            if ((true == hasCurrentMatch && matches[i].first >= fromEnd) || (false == hasCurrentMatch && matches[i].first + matches[i].second > fromEnd))
+            {
+                index = i;
+                break;
+            }
+        }
+        if (-1 == index)
+        {
+            index = 0; // Wrap around
+        }
+    }
+    else
+    {
+        for (int i = matches.size() - 1; i >= 0; --i)
+        {
+            if (matches[i].first < fromStart)
+            {
+                index = i;
+                break;
+            }
+        }
+        if (-1 == index)
+        {
+            index = matches.size() - 1; // Wrap around
+        }
+    }
+
+    this->selectMatch(matches[index].first, matches[index].second);
+
+    Q_EMIT resultSearch(index + 1, matches.size());
+}
+
+void LuaHighlighter::replaceInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive)
+{
+    if (true == searchText.isEmpty())
+    {
+        return;
+    }
+
+    // Highlights the lines with the old and new matches again, if something changed
+    this->setSearchParameters(searchText, wholeWord, caseSensitive);
+
+    // Only replace, if the current match is still a real match at exactly this place. Else just go to the next match, so that the user sees, what will be replaced.
+    if (false == this->currentMatchCursor.isNull() && true == this->currentMatchCursor.hasSelection())
+    {
+        const int start = this->currentMatchCursor.selectionStart();
+        const int length = this->currentMatchCursor.selectionEnd() - start;
+
+        const auto matches = this->collectMatches();
+        bool isMatch = false;
+        for (const auto& match : matches)
+        {
+            if (match.first == start && match.second == length)
+            {
+                isMatch = true;
+                break;
+            }
+        }
+
+        if (true == isMatch)
+        {
+            QTextCursor replaceCursor(this->document());
+            replaceCursor.setPosition(start);
+            replaceCursor.setPosition(start + length, QTextCursor::KeepAnchor);
+            replaceCursor.beginEditBlock();
+            replaceCursor.insertText(replaceText);
+            replaceCursor.endEditBlock();
+
+            // Continue behind the replaced text, so that a replace text, which contains the search text, is not found again
+            this->currentMatchCursor = QTextCursor();
+            QMetaObject::invokeMethod(this->luaEditorTextEdit, "select", Q_ARG(int, start + replaceText.length()), Q_ARG(int, start + replaceText.length()));
+        }
+    }
+
+    this->searchNextInTextEdit(searchText, wholeWord, caseSensitive, false);
+}
+
+int LuaHighlighter::replaceAllInTextEdit(const QString& searchText, const QString& replaceText, bool wholeWord, bool caseSensitive)
+{
+    if (true == searchText.isEmpty())
+    {
+        Q_EMIT resultReplaceAll(0);
+        return 0;
+    }
+
+    // Highlights the lines with the old and new matches again, if something changed
+    this->setSearchParameters(searchText, wholeWord, caseSensitive);
+
+    const auto matches = this->collectMatches();
+    if (true == matches.isEmpty())
+    {
+        Q_EMIT resultReplaceAll(0);
+        this->emitSearchResult();
+        return 0;
+    }
+
+    this->currentMatchCursor = QTextCursor();
+
+    // All replacements are one undo step. From the end to the start, so that the positions of the remaining matches stay valid.
+    QTextCursor replaceCursor(this->document());
+    replaceCursor.beginEditBlock();
+    for (int i = matches.size() - 1; i >= 0; --i)
+    {
+        replaceCursor.setPosition(matches[i].first);
+        replaceCursor.setPosition(matches[i].first + matches[i].second, QTextCursor::KeepAnchor);
+        replaceCursor.insertText(replaceText);
+    }
+    replaceCursor.endEditBlock();
+
+    Q_EMIT resultReplaceAll(matches.size());
+    this->emitSearchResult();
+
+    return matches.size();
+}
+
+void LuaHighlighter::setWordHighlight(const QString& word)
+{
+    QString cleanWord = word.trimmed();
+    if (cleanWord.contains(QChar('\n')) || cleanWord.contains(QChar(QChar::ParagraphSeparator)))
+    {
+        cleanWord.clear();
+    }
+
+    if (this->wordHighlight == cleanWord)
+    {
+        return;
+    }
+
+    this->wordHighlight = cleanWord;
+    if (false == this->wordHighlight.isEmpty())
+    {
+        this->wordHighlightExpression = QRegularExpression("(?<![A-Za-z0-9_])" + QRegularExpression::escape(this->wordHighlight) + "(?![A-Za-z0-9_])");
+    }
+    else
+    {
+        this->wordHighlightExpression = QRegularExpression();
+    }
+
+    // During a search the word highlight is not shown
+    if (true == this->searchText.isEmpty())
+    {
+        this->rehighlightVisibleStaleBlocks();
+    }
+}
+
+void LuaHighlighter::applyBackground(int start, int length, const QColor& color)
+{
+    // Only the background is changed, so that the syntax colors stay visible
+    for (int i = start; i < start + length; ++i)
+    {
+        QTextCharFormat charFormat = this->format(i);
+        charFormat.setBackground(color);
+        this->setFormat(i, 1, charFormat);
+    }
 }
 
 void LuaHighlighter::highlightBlock(const QString& text)
 {
+    // Attention: Never change the document in here. The old search replaced text in here, which crashed on undo.
+
     // Apply highlighting rules
     for (const HighlightingRule& rule : std::as_const(this->highlightingRules))
     {
@@ -632,42 +1047,22 @@ void LuaHighlighter::highlightBlock(const QString& text)
         }
     }
 
-    this->errorAlreadyCleared = false;
+    const int currentBlockNumber = currentBlock().blockNumber();
 
     // Only apply error formatting if we are on the error line
-    if (this->errorLine != -1)
+    if (this->errorLine != -1 && currentBlockNumber == this->errorLine - 1)
     {
-        // Get the current block number to check if it matches errorLine
-        int currentBlockNumber = currentBlock().blockNumber();
-
-        // If current block number matches the error line, apply the error format
-        if (currentBlockNumber == this->errorLine - 1)
-        {
-            // Format is per block! so the current block starts with 0, the next one too!
-            // Set the format for the entire block (line)
-            setFormat(0, currentBlock().text().length(), this->errorFormat);  // 0 = start of line, text.length() = end of line
-        }
+        // Format is per block! so the current block starts with 0, the next one too!
+        setFormat(0, text.length(), this->errorFormat);
     }
 
-    this->runtimeErrorAlreadyCleared = false;
-
-    // Only apply runtime error formatting if we are on the error line
-    if (this->runtimeErrorLine != -1)
+    // The runtime error is shown, as long as its line has not been changed. If the user edits the line, it is most likely being fixed.
+    if (false == this->runtimeErrorCursor.isNull() && this->runtimeErrorCursor.block() == currentBlock() && text == this->runtimeErrorBlockText)
     {
-        // Get the current block number to check if it matches errorLine
-        int currentBlockNumber = currentBlock().blockNumber();
-
-        // If current block number matches the error line, apply the error format
-        if (currentBlockNumber == this->runtimeErrorLine - 1)
-        {
-            // Format is per block! so the current block starts with 0, the next one too!
-            // Set the format for the entire block (line)
-            setFormat(0, currentBlock().text().length(), this->runtimeErrorFormat);  // 0 = start of line, text.length() = end of line
-        }
+        setFormat(0, text.length(), this->runtimeErrorFormat);
     }
 
     // Bracket highlighting logic
-
     QStack<int> bracketStack;
 
     // Loop over the text to check for unbalanced brackets
@@ -698,99 +1093,54 @@ void LuaHighlighter::highlightBlock(const QString& text)
     }
 
     // Only match for the current block (line)
-    if (cursor.block() == currentBlock())
+    if (false == this->cursor.isNull() && this->cursor.block() == currentBlock())
     {
         this->highlightMatchingBrackets();
     }
 
-    // Search highlight logic (for highlighting search terms)
-    if (false == this->searchText.isEmpty())
+    bool hasMarks = false;
+    if (false == this->searchText.isEmpty() && true == this->searchExpression.isValid())
     {
-        int searchStart = 0;
-        QTextCharFormat searchFormat;
-        searchFormat.setBackground(Qt::yellow);  // Highlight format for search results
-
-        auto searchFlags = Qt::CaseInsensitive;
-        if (this->caseSensitiv)
+        // All matches yellow
+        QRegularExpressionMatchIterator it = this->searchExpression.globalMatch(text);
+        while (it.hasNext())
         {
-            searchFlags = Qt::CaseSensitive;
+            QRegularExpressionMatch match = it.next();
+            this->applyBackground(match.capturedStart(), match.capturedLength(), QColor(Qt::yellow));
+            hasMarks = true;
         }
 
-        QTextDocument::FindFlags searchFlags2 = QTextDocument::FindFlags();
-        if (true == this->caseSensitiv)
+        // The current match orange
+        if (false == this->currentMatchCursor.isNull() && true == this->currentMatchCursor.hasSelection())
         {
-            searchFlags2 = QTextDocument::FindFlag::FindCaseSensitively;
+            const int blockPosition = currentBlock().position();
+            const int start = this->currentMatchCursor.selectionStart() - blockPosition;
+            const int end = this->currentMatchCursor.selectionEnd() - blockPosition;
+            if (start >= 0 && end <= text.length() && end > start)
+            {
+                this->applyBackground(start, end - start, QColor("#FFA500"));
+                hasMarks = true;
+            }
         }
-        if (true == this->wholeWord)
-        {
-            searchFlags2 |= QTextDocument::FindFlag::FindWholeWords;
-        }
-
-        while ((searchStart = text.indexOf(this->searchText, searchStart, searchFlags)) != -1)
-        {
-            if (this->wholeWord && !this->isWholeWord(text, searchStart, this->searchText.length()))
-            {
-                // If replaceText is not empty, replace the found text
-                if (!this->replaceText.isEmpty())
-                {
-                    this->replaceInBlock(searchStart);
-                }
-
-                searchStart += this->searchText.length();
-                continue;
-            }
-
-            ++this->matchCount;
-
-            if (this->searchContinueMode && this->currentMatchIndex == this->matchCount)
-            {
-                // Highlight only the current match
-                setFormat(searchStart, this->searchText.length(), searchFormat);
-                // Move the QTextCursor to the match position
-                QTextCursor cursor(this->document());
-                cursor.setPosition(currentBlock().position() + searchStart); // Match position in the document
-                cursor.setPosition(cursor.position() + this->searchText.length(), QTextCursor::KeepAnchor);
-
-                // Calculate the cursor rectangle for the matched text
-                QRectF cursorRectangle = this->document()->documentLayout()->blockBoundingRect(cursor.block());
-
-                // Add an offset to the rectangle's height, so that if the editor must scroll, the found text is properly visible and not half cut on the edge
-                constexpr int yOffset = 50;
-                cursorRectangle.setHeight(cursorRectangle.height() + yOffset);
-
-                Q_EMIT resultSearchMatchCount(this->currentMatchIndex);
-                Q_EMIT resultSearchContinuePosition(cursorRectangle);
-                return; // Stop after highlighting the current match
-            }
-            else if (false == this->searchContinueMode)
-            {
-                // Highlight all matches if not in "continue" mode
-                setFormat(searchStart, this->searchText.length(), searchFormat);
-            }
-
-            // If replaceText is not empty, replace the found text
-            if (!this->replaceText.isEmpty())
-            {
-                this->replaceInBlock(searchStart);
-            }
-
-            searchStart += this->searchText.length();
-        }
-
-
     }
-}
+    else if (false == this->wordHighlight.isEmpty() && true == this->wordHighlightExpression.isValid())
+    {
+        QRegularExpressionMatchIterator it = this->wordHighlightExpression.globalMatch(text);
+        while (it.hasNext())
+        {
+            QRegularExpressionMatch match = it.next();
+            this->applyBackground(match.capturedStart(), match.capturedLength(), QColor("#ADD8E6"));
+            hasMarks = true;
+        }
+    }
 
-// Function to check if the search result is a whole word
-bool LuaHighlighter::isWholeWord(const QString &text, int startIndex, int length)
-{
-    // Get characters before and after the search result
-    QChar beforeChar = startIndex > 0 ? text.at(startIndex - 1) : QChar();
-    QChar afterChar = (startIndex + length < text.length()) ? text.at(startIndex + length) : QChar();
-
-    // Check if they are word boundaries (non-alphanumeric characters or start/end of text)
-    bool isWordBoundaryBefore = beforeChar.isNull() || !beforeChar.isLetterOrNumber();
-    bool isWordBoundaryAfter = afterChar.isNull() || !afterChar.isLetterOrNumber();
-
-    return isWordBoundaryBefore && isWordBoundaryAfter;
+    // Remember, with which search or word highlight this line has been highlighted (see rehighlightVisibleStaleBlocks)
+    MarkStateUserData* userData = static_cast<MarkStateUserData*>(this->currentBlockUserData());
+    if (Q_NULLPTR == userData)
+    {
+        userData = new MarkStateUserData();
+        this->setCurrentBlockUserData(userData);
+    }
+    userData->markState = this->getMarkState();
+    userData->hasMarks = hasMarks;
 }

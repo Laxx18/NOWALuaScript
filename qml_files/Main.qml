@@ -30,6 +30,43 @@ ApplicationWindow
     // Flag to control forced close
     property bool forceClose: false
 
+    // The tab, which shall be closed after the unsaved changes question
+    property int tabIndexToClose: -1
+
+    // Lua scripts, which have been changed outside of the editor while they have unsaved changes. Asked one after the other.
+    property var externallyChangedFiles: []
+
+    // The LuaEditor of the current tab. Attention: The editors are the children of the stack layout in the order of the tabs.
+    function currentEditor()
+    {
+        if (tabBar.currentIndex < 0 || tabBar.currentIndex >= luaEditorContainer.children.length)
+        {
+            return null;
+        }
+        return luaEditorContainer.children[tabBar.currentIndex];
+    }
+
+    function askNextExternallyChangedFile()
+    {
+        if (externalChangeDialog.visible || root.externallyChangedFiles.length === 0)
+        {
+            return;
+        }
+
+        let filePathName = root.externallyChangedFiles[0];
+        externalChangeDialog.filePathName = filePathName;
+        externalChangeDialog.informativeText = "The file\n" + filePathName + "\nhas been changed outside of the editor.\n\nReload it and discard your changes in the editor?";
+        externalChangeDialog.visible = true;
+    }
+
+    function finishExternallyChangedFile()
+    {
+        let files = root.externallyChangedFiles.slice();
+        files.shift();
+        root.externallyChangedFiles = files;
+        Qt.callLater(root.askNextExternallyChangedFile);
+    }
+
     onClosing: function(closeEvent)
     {
         if (root.forceClose)
@@ -68,11 +105,13 @@ ApplicationWindow
             {
                NOWALuaEditorModel.currentIndex = currentIndex;
                // Get the LuaEditor for the current index
-               let luaEditor = luaEditorContainer.itemAt(currentIndex);
+               let luaEditor = root.currentEditor();
                if (luaEditor)
                {
                    luaEditor.checkSyntax();
                }
+               // The search marks the matches in the new tab
+               searchDialog.refreshSearch();
             }
 
             Repeater
@@ -113,23 +152,63 @@ ApplicationWindow
     //     color: "red";
     // }
 
-    StackLayout
-    {
-        // NOTE: Do not change this names, as they are used for object matching in C++
-        id: luaEditorContainer;
-        objectName: "luaEditorContainer";
+    // The file of the current tab, which is highlighted in the project view
+    property string currentFilePathName: "";
 
-        width: parent.width;
-        height: root.height * 0.95;
-        currentIndex: tabBar.currentIndex;
+    function updateCurrentFilePathName()
+    {
+        let item = NOWALuaEditorModel.getEditorModelItem(NOWALuaEditorModel.currentIndex);
+        root.currentFilePathName = item ? item.filePathName : "";
+    }
+
+    Connections
+    {
+        target: NOWALuaEditorModel;
+
+        function onCurrentIndexChanged()
+        {
+            root.updateCurrentFilePathName();
+        }
+    }
+
+    SplitView
+    {
+        id: mainSplitView;
+
+        anchors.fill: parent;
+        orientation: Qt.Horizontal;
+
+        // Left: The project with all lua files, if a folder or project has been opened
+        ProjectView
+        {
+            id: projectView;
+
+            visible: NOWAProjectModel.isOpen;
+            currentFilePathName: root.currentFilePathName;
+
+            SplitView.preferredWidth: 280;
+            SplitView.minimumWidth: 150;
+        }
+
+        StackLayout
+        {
+            // NOTE: Do not change this names, as they are used for object matching in C++
+            id: luaEditorContainer;
+            objectName: "luaEditorContainer";
+
+            SplitView.fillWidth: true;
+            currentIndex: tabBar.currentIndex;
+        }
     }
 
     // Function to close the tab
     function closeTab(index)
     {
-        // if (tabBar.unsavedChanges[index])
-        if (NOWALuaEditorModel.hasChanges)
+        // Attention: The tab to close is not always the current one. Formerly the changes of the current tab were checked,
+        // and after the question the current tab was closed instead of the clicked one.
+        if (NOWALuaEditorModel.getHasChangesAt(index))
         {
+            root.tabIndexToClose = index;
             messageDialog.visible = true;
         }
         else
@@ -159,7 +238,56 @@ ApplicationWindow
         onAccepted:
         {
             // Close the tab if accepted
-            removeTab(tabBar.currentIndex);
+            if (root.tabIndexToClose >= 0)
+            {
+                removeTab(root.tabIndexToClose);
+            }
+            root.tabIndexToClose = -1;
+        }
+
+        onRejected:
+        {
+            root.tabIndexToClose = -1;
+        }
+    }
+
+    MessageDialog
+    {
+        id: externalChangeDialog;
+        visible: false;
+
+        property string filePathName: "";
+
+        text: "File changed outside of the editor";
+        informativeText: "";
+        buttons: MessageDialog.Yes | MessageDialog.No;
+
+        onAccepted:
+        {
+            NOWALuaEditorModel.reloadLuaScript(externalChangeDialog.filePathName);
+            root.finishExternallyChangedFile();
+        }
+
+        onRejected:
+        {
+            // Keeps the changes of the editor. Saving overwrites the file.
+            root.finishExternallyChangedFile();
+        }
+    }
+
+    Connections
+    {
+        target: NOWALuaEditorModel;
+
+        function onSignal_luaScriptChangedExternally(filePathName)
+        {
+            if (root.externallyChangedFiles.indexOf(filePathName) === -1)
+            {
+                let files = root.externallyChangedFiles.slice();
+                files.push(filePathName);
+                root.externallyChangedFiles = files;
+            }
+            root.askNextExternallyChangedFile();
         }
     }
 
@@ -178,11 +306,111 @@ ApplicationWindow
             }
         }
 
+    // Ctrl+G: Enter a line number and press Return to jump there. Escape closes.
+    Popup
+    {
+        id: goToLineDialog;
+        objectName: "goToLineDialog";
+
+        property int lineCount: 1;
+
+        x: (parent.width - width) / 2;
+        y: 60;
+        width: 300;
+        modal: false;
+        focus: true;
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside;
+
+        function openDialog()
+        {
+            let editor = root.currentEditor();
+            if (!editor)
+            {
+                return;
+            }
+
+            goToLineDialog.lineCount = editor.getLineCount();
+            lineNumberField.text = "";
+            goToLineDialog.open();
+            lineNumberField.forceActiveFocus();
+        }
+
+        function goToLine()
+        {
+            let editor = root.currentEditor();
+            let lineNumber = parseInt(lineNumberField.text);
+            if (editor && !isNaN(lineNumber))
+            {
+                lineNumber = Math.max(1, Math.min(lineNumber, goToLineDialog.lineCount));
+                goToLineDialog.close();
+                editor.goToLine(lineNumber);
+            }
+        }
+
+        onClosed:
+        {
+            let editor = root.currentEditor();
+            if (editor)
+            {
+                editor.focusEditor();
+            }
+        }
+
+        background: Rectangle
+        {
+            color: "#2F4F4F";
+            border.color: "#7FA7A7";
+            border.width: 1;
+            radius: 4;
+        }
+
+        ColumnLayout
+        {
+            anchors.fill: parent;
+            spacing: 4;
+
+            Label
+            {
+                text: "Go to line (1 - " + goToLineDialog.lineCount + "):";
+                color: "white";
+            }
+
+            TextField
+            {
+                id: lineNumberField;
+
+                Layout.fillWidth: true;
+                placeholderText: "Line number";
+                selectByMouse: true;
+                validator: IntValidator { bottom: 1; }
+
+                Keys.onReturnPressed: (event) =>
+                {
+                    goToLineDialog.goToLine();
+                    event.accepted = true;
+                }
+
+                Keys.onEnterPressed: (event) =>
+                {
+                    goToLineDialog.goToLine();
+                    event.accepted = true;
+                }
+            }
+        }
+    }
+
     SearchDialog
     {
         id: searchDialog;
-        x: luaEditorContainer.width - searchDialog.width - 20;
-        y: 120;
+
+        // Top right above the editor, like in other editors
+        anchors.top: parent.top;
+        anchors.right: parent.right;
+        anchors.topMargin: 4;
+        anchors.rightMargin: 40;
+        z: 3;
+
+        editor: tabBar.currentIndex >= 0 && tabBar.currentIndex < luaEditorContainer.children.length ? luaEditorContainer.children[tabBar.currentIndex] : null;
     }
 
     IntelliSenseContextMenu
@@ -218,37 +446,40 @@ ApplicationWindow
         visible: false;
     }
 
-    // Shortcut to open the search window with Ctrl+F
+    // Search, takes over the selected text or the word under the cursor
     Shortcut
     {
         sequence: "Ctrl+F";
-        onActivated:
-        {
-            searchDialog.visible = true;
-            if (searchDialog.visible)
-            {
-               searchDialog.raise(); // Bring the window to the front
-            }
-        }
+        onActivated: searchDialog.openSearch(false);
+    }
+
+    // Search and replace
+    Shortcut
+    {
+        sequence: "Ctrl+H";
+        onActivated: searchDialog.openSearch(true);
+    }
+
+    // Go to line
+    Shortcut
+    {
+        sequence: "Ctrl+G";
+        onActivated: goToLineDialog.openDialog();
     }
 
     Shortcut
     {
-        sequence: "Tab";
-        onActivated:
-        {
-            NOWALuaEditorModel.addTabToSelection();
-        }
+        sequence: "F3";
+        onActivated: searchDialog.findNext(false);
     }
 
     Shortcut
     {
-        sequence: "Shift+Tab";
-        onActivated:
-        {
-            NOWALuaEditorModel.removeTabFromSelection();
-        }
+        sequence: "Shift+F3";
+        onActivated: searchDialog.findNext(true);
     }
+
+    // Note: Tab and Shift+Tab are handled by the editor itself (LuaEditor.qml). As window shortcuts they also fired in other fields and could hit another tab.
 
     Shortcut
     {

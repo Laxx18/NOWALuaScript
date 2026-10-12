@@ -55,7 +55,7 @@ Q_SIGNALS:
     void signal_luaScriptReady(const QString& filePathName, const QString& content);
     void signal_syntaxCheckResult(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
     void signal_runtimeError(const QString& filePathName, bool valid, int line, int start, int end, const QString& message);
-    void signal_luaScriptSaved();
+    void signal_luaScriptSaved(const QString& filePathName);
     void signal_luaApiPrepareResult(bool silent, bool success, const QString& message);
 
 private:

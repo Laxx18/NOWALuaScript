@@ -74,6 +74,7 @@ qt_add_resources(NOWALuaScript "qml"
         qml_files/Main.qml
         qml_files/MainMenu.qml
         qml_files/SearchDialog.qml
+        qml_files/ProjectView.qml
         qml_files/AboutDialog.qml
         qml_files/IntelliSenseContextMenu.qml
         qml_files/MatchedFunctionContextMenu.qml
@@ -90,6 +91,7 @@ qt_add_qml_module(NOWALuaScript
         model/luaeditormodelitem.h model/luaeditormodelitem.cpp
         model/luaeditormodel.h model/luaeditormodel.cpp
         model/apimodel.h model/apimodel.cpp
+        model/projectmodel.h model/projectmodel.cpp
         model/matchclassworker.h model/matchclassworker.cpp
         qml/luaeditorqml.h qml/luaeditorqml.cpp
         qml/luahighlighter.h qml/luahighlighter.cpp
