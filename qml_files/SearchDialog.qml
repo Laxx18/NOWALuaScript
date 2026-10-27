@@ -28,7 +28,8 @@ Rectangle
     property var editor: null;
 
     property bool replaceVisible: false;
-    property bool caseSensitive: true;
+    // Off by default: "gamecamera" finds GameCamera too. Match case is switched on with the "Aa" button when needed.
+    property bool caseSensitive: false;
     property bool wholeWord: false;
     property int currentMatch: 0;
     property int matchCount: 0;
